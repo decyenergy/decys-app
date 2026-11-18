@@ -20,7 +20,7 @@ h1{font-size:22px;margin:4px 0 2px}
 .sub{color:var(--mute);font-size:14px;margin:0 0 14px}
 .link{background:none;border:0;color:var(--flame);font:inherit;font-size:14px;cursor:pointer;padding:6px}
 nav{display:flex;gap:6px;background:var(--tile);padding:4px;border-radius:12px;margin-bottom:14px}
-nav button{flex:1;border:0;background:none;color:var(--mute);padding:10px 6px;border-radius:9px;font:inherit;font-weight:600;cursor:pointer}
+nav button{flex:1;border:0;background:none;color:var(--mute);padding:10px 4px;border-radius:9px;font:inherit;font-weight:600;font-size:14px;cursor:pointer}
 nav button[aria-selected="true"]{background:var(--card);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.15)}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -31,12 +31,16 @@ nav button[aria-selected="true"]{background:var(--card);color:var(--ink);box-sha
 .profit b{font-size:26px;color:var(--good)}
 .row{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid var(--line)}
 .row:last-child{border-bottom:0}.row>span:first-child{color:var(--mute)}
+.prow{cursor:pointer}.prow>span:first-child{color:var(--ink)}
 .ok{color:var(--good)}.warn{color:var(--bad)}
 h2{font-size:16px;margin:0 0 8px}
 label{display:block;font-size:13px;color:var(--mute);margin-bottom:10px}
-input{width:100%;margin-top:4px;padding:11px;border-radius:9px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:inherit}
-input:focus,button:focus-visible{outline:2px solid var(--flame);outline-offset:1px}
+input,select{width:100%;margin-top:4px;padding:11px;border-radius:9px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:inherit}
+input:focus,select:focus,button:focus-visible{outline:2px solid var(--flame);outline-offset:1px}
 .btn{width:100%;padding:13px;border:0;border-radius:11px;background:var(--flame);color:#fff;font:inherit;font-weight:700;cursor:pointer}
+.seg{display:flex;gap:6px;margin-bottom:12px}
+.seg button{border:1px solid var(--line);background:none;color:var(--mute);padding:8px 16px;border-radius:20px;font:inherit;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--flame);border-color:var(--flame);color:#fff}
 .scroll{overflow-x:auto}
 table{border-collapse:collapse;width:100%;font-size:14px;min-width:480px}
 th,td{text-align:right;padding:8px 6px;border-bottom:1px solid var(--line);white-space:nowrap}
@@ -53,7 +57,7 @@ th:first-child,td:first-child{text-align:left}th{color:var(--mute);font-weight:6
 <script type="module">
 import {initializeApp} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
 import {getAuth,onAuthStateChanged,signInWithEmailAndPassword,signOut} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
-import {getFirestore,doc,getDoc,setDoc,collection,onSnapshot} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import {getFirestore,doc,getDoc,setDoc,deleteDoc,collection,onSnapshot} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 const app=initializeApp({
   apiKey:"AIzaSyCqvBAgLTmb9uHwQ5Vg1hknIAbGz7cwGNs",
@@ -66,7 +70,9 @@ const app=initializeApp({
 const auth=getAuth(app),db=getFirestore(app);
 const N=n=>"₦"+Math.round(n).toLocaleString("en-NG"),K=n=>(Math.round(n*10)/10).toLocaleString("en-NG")+"kg";
 const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 let me=null,isOwner=false,tab="report",sales=[],costs={},msg="",unsubs=[];
+let ledgers={customer:[],supplier:[]},bal={kind:"customer",party:null,mode:"list"};
 
 function loginView(err=""){
  $("who").textContent="Staff sign-in";$("out").hidden=true;
@@ -119,16 +125,81 @@ function entry(rs){
  ${f("exp","Operating expenses (₦)",0)}${f("cash","Cash received (₦)","")}${f("bank","Bank received (₦)",0)}
  ${isOwner?f("cost","Cost per kg (₦, owner only)",l&&l.cost!=null?l.cost:""):""}
  <button class="btn" id="save">Save day</button></div>`}
+
+/* ---------- Balances ---------- */
+const coll=k=>k=="customer"?"customerLedger":"supplierLedger";
+const LBL={
+ customer:{ent:"Customer",title:"Customers",tot:"Customers owe you",up:"Took goods on credit",down:"Paid us"},
+ supplier:{ent:"Supplier",title:"Suppliers",tot:"You owe suppliers",up:"Supplied on credit",down:"We paid supplier"}};
+function partyList(k){
+ const m={};
+ ledgers[k].forEach(e=>{
+  const p=m[e.key]=m[e.key]||{key:e.key,name:e.party,bal:0,last:""};
+  p.bal+=e.dir=="up"?e.amount:-e.amount;
+  if(e.date>=p.last){p.last=e.date;p.name=e.party}});
+ return Object.values(m).sort((a,b)=>b.bal-a.bal)}
+function ledgerForm(){
+ const k=bal.kind,L=LBL[k],ps=partyList(k),cur=ps.find(p=>p.key==bal.party);
+ return `<div class="card"><h2>New ${L.ent.toLowerCase()} entry</h2>
+ <label>${L.ent} name<input id="lp" list="pl" autocomplete="off" value="${cur?esc(cur.name):""}"><datalist id="pl">${ps.map(p=>`<option value="${esc(p.name)}">`).join("")}</datalist></label>
+ <label>What happened<select id="ldir"><option value="up">${L.up}</option><option value="down">${L.down}</option></select></label>
+ <label>Amount (₦)<input id="la" type="number" inputmode="decimal" step="any"></label>
+ <label>Date<input id="ld" type="date" value="${new Date().toISOString().slice(0,10)}"></label>
+ <label>Note (optional)<input id="ln"></label>
+ <button class="btn" id="lsave">Save entry</button>
+ <button class="link" id="lcancel" style="width:100%;margin-top:6px">Cancel</button></div>`}
+function balances(){
+ if(!isOwner)bal.kind="customer";
+ const k=bal.kind,L=LBL[k];
+ if(bal.mode=="add")return ledgerForm();
+ const ps=partyList(k),p=ps.find(x=>x.key==bal.party);
+ if(p){
+  const es=ledgers[k].filter(e=>e.key==p.key).sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:(b.ts||0)-(a.ts||0));
+  return `<button class="link" id="lback">‹ All ${L.title.toLowerCase()}</button>
+  <div class="card"><h2>${esc(p.name)}</h2><div class="tile"><small>${k=="customer"?"Owes you":"You owe"}</small><b class="${p.bal>0?"warn":"ok"}">${N(p.bal)}</b></div></div>
+  <button class="btn" id="ladd" style="margin-bottom:14px">+ Add entry for ${esc(p.name)}</button>
+  <div class="card"><h2>History</h2>${es.map(e=>`<div class="row"><span>${e.date} · ${e.dir=="up"?L.up:L.down}${e.note?" · "+esc(e.note):""}<br><span class="note">by ${esc(e.by||"Staff")}</span></span><span><b class="${e.dir=="up"?"warn":"ok"}">${e.dir=="up"?"+":"−"}${N(e.amount)}</b>${isOwner?`<br><button class="link" data-del="${esc(e.id)}">Delete</button>`:""}</span></div>`).join("")}</div>`}
+ const tot=ps.reduce((a,x)=>a+x.bal,0);
+ const seg=isOwner?`<div class="seg"><button data-k="customer" aria-pressed="${k=="customer"}">Customers</button><button data-k="supplier" aria-pressed="${k=="supplier"}">Suppliers</button></div>`:"";
+ return `${seg}<div class="card"><div class="tile"><small>${L.tot}</small><b>${N(tot)}</b></div></div>
+ <button class="btn" id="ladd" style="margin-bottom:14px">+ New entry</button>
+ <div class="card"><h2>${L.title}</h2>${ps.length?ps.map(x=>`<div class="row prow" data-p="${esc(x.key)}"><span>${esc(x.name)}</span><b class="${x.bal>0?"warn":"ok"}">${N(x.bal)}</b></div>`).join(""):`<p class="note">Nothing recorded yet.</p>`}</div>`}
+function wireBal(){
+ const w=$("view"),go=()=>{$("view").innerHTML="";render()};
+ w.querySelectorAll("[data-k]").forEach(b=>b.onclick=()=>{bal.kind=b.dataset.k;bal.party=null;bal.mode="list";go()});
+ w.querySelectorAll("[data-p]").forEach(b=>b.onclick=()=>{bal.party=b.dataset.p;go()});
+ w.querySelectorAll("[data-del]").forEach(b=>b.onclick=async()=>{
+  if(!confirm("Delete this entry?"))return;
+  try{await deleteDoc(doc(db,coll(bal.kind),b.dataset.del))}catch(e){alert("Could not delete.")}});
+ const bk=$("lback");if(bk)bk.onclick=()=>{bal.party=null;bal.mode="list";go()};
+ const ad=$("ladd");if(ad)ad.onclick=()=>{bal.mode="add";go()};
+ const cn=$("lcancel");if(cn)cn.onclick=()=>{bal.mode="list";go()};
+ const sv=$("lsave");if(sv)sv.onclick=saveLedger}
+async function saveLedger(){
+ const k=bal.kind,party=$("lp").value.trim(),amount=parseFloat($("la").value),date=$("ld").value;
+ if(!party||isNaN(amount)||amount<=0||!date){alert("Enter the name, a positive amount and the date.");return}
+ const key=party.toLowerCase(),id=Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+ try{
+  await setDoc(doc(db,coll(k),id),{id,key,party,dir:$("ldir").value,amount,date,note:$("ln").value.trim(),by:(me.email||"").split("@")[0],uid:me.uid,ts:Date.now()});
+  bal.party=key;bal.mode="list";msg="Entry saved";$("view").innerHTML="";render()
+ }catch(e){alert("Could not save. Check your connection and try again.")}}
+
+/* ---------- Render ---------- */
 function render(){
  const rs=rows(),v=$("app");
- if(!$("view")){v.innerHTML=`<nav role="tablist"><button data-tab="report">Daily report</button><button data-tab="entry">Add a day</button><button data-tab="history">History</button></nav><div id="view"></div>`;
-  v.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{tab=b.dataset.tab;$("view").innerHTML="";render()})}
+ if(!$("view")){v.innerHTML=`<nav role="tablist"><button data-tab="report">Daily report</button><button data-tab="entry">Add a day</button><button data-tab="balances">Balances</button><button data-tab="history">History</button></nav><div id="view"></div>`;
+  v.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{tab=b.dataset.tab;if(tab=="balances"){bal.mode="list";bal.party=null}$("view").innerHTML="";render()})}
  v.querySelectorAll("nav button").forEach(b=>b.setAttribute("aria-selected",b.dataset.tab==tab));
  const w=$("view");
  if(tab=="entry"){if(!w.querySelector("#save")){w.innerHTML=entry(rs);$("save").onclick=save}}
+ else if(tab=="balances"){w.innerHTML=balances();wireBal()}
  else if(!rs.length)w.innerHTML=`<div class="card"><h2>No days recorded yet</h2><p class="note">Open Add a day and enter the first day’s figures.</p></div>`;
  else w.innerHTML=tab=="report"?report(rs[rs.length-1]):history(rs);
  if(msg){w.insertAdjacentHTML("beforeend",`<div class="toast" role="status">${msg}</div>`);msg="";setTimeout(()=>document.querySelector(".toast")?.remove(),2200)}}
+function redraw(){
+ if(tab=="entry"&&$("save"))return;
+ if(tab=="balances"&&bal.mode=="add"&&$("lsave"))return;
+ $("view").innerHTML="";render()}
 async function save(){
  const g=i=>$(i)?.value,n=i=>parseFloat(g(i));
  const need=["sold","price","recv","count","exp","cash","bank"].concat(sales.length?[]:["open"]);
@@ -137,19 +208,16 @@ async function save(){
  if(!isOwner&&sales.some(s=>s.date==date)){alert("That day is already saved. Ask the owner to correct it.");return}
  const prev=sales.filter(s=>s.date<date).pop(),open=prev?prev.count:n("open");
  if(isNaN(open)){alert("Opening stock needed for this date.");return}
-  const costVal=n("cost");
-
+ const costVal=n("cost");
  try{
   await setDoc(doc(db,"sales",date),{date,open,sold:n("sold"),price:n("price"),recv:n("recv"),count:n("count"),exp:n("exp"),cash:n("cash"),bank:n("bank"),by:(me.email||"").split("@")[0],uid:me.uid});
-  if(isOwner&&!isNaN(n("cost")))await setDoc(doc(db,"owner","cost-"+date),{date,cost:n("cost")});
-   if(isOwner&&!isNaN(costVal))await setDoc(doc(db,"owner","cost-"+date),{date,cost:costVal});
-
+  if(isOwner&&!isNaN(costVal))await setDoc(doc(db,"owner","cost-"+date),{date,cost:costVal});
   msg="Day saved";tab="report";$("view").innerHTML="";render()
  }catch(e){alert("Could not save. Check your connection and try again.")}}
 
 $("out").onclick=()=>signOut(auth);
 onAuthStateChanged(auth,async u=>{
- unsubs.forEach(f=>f());unsubs=[];sales=[];costs={};me=u;
+ unsubs.forEach(f=>f());unsubs=[];sales=[];costs={};ledgers={customer:[],supplier:[]};me=u;
  if(!u){loginView();return}
  try{
   const r=await getDoc(doc(db,"roles",u.uid));
@@ -157,8 +225,12 @@ onAuthStateChanged(auth,async u=>{
   isOwner=r.data().role=="owner";
   $("who").textContent=(isOwner?"Owner view · ":"Staff view · ")+u.email;$("out").hidden=false;
   $("app").innerHTML="";render();
-  unsubs.push(onSnapshot(collection(db,"sales"),s=>{sales=s.docs.map(d=>d.data()).sort((a,b)=>a.date<b.date?-1:1);$("view").innerHTML="";render()},()=>{$("app").innerHTML='<div class="card warn">Could not load records.</div>'}));
-  if(isOwner)unsubs.push(onSnapshot(collection(db,"owner"),s=>{costs={};s.docs.forEach(d=>{const x=d.data();costs[x.date]=x.cost});$("view").innerHTML="";render()},()=>{}));
+  unsubs.push(onSnapshot(collection(db,"sales"),s=>{sales=s.docs.map(d=>d.data()).sort((a,b)=>a.date<b.date?-1:1);redraw()},()=>{$("app").innerHTML='<div class="card warn">Could not load records.</div>'}));
+  unsubs.push(onSnapshot(collection(db,"customerLedger"),s=>{ledgers.customer=s.docs.map(d=>d.data());redraw()},()=>{}));
+  if(isOwner){
+   unsubs.push(onSnapshot(collection(db,"owner"),s=>{costs={};s.docs.forEach(d=>{const x=d.data();costs[x.date]=x.cost});redraw()},()=>{}));
+   unsubs.push(onSnapshot(collection(db,"supplierLedger"),s=>{ledgers.supplier=s.docs.map(d=>d.data());redraw()},()=>{}));
+  }
  }catch(e){loginView("Could not connect. Check your internet and sign in again.")}
 });
 </script>
