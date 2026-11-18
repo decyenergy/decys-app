@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Decy’s Energy">
+<meta name="theme-color" content="#0f2233">
+<title>Decy’s Energy Solution</title>
+<style>
+:root{--bg:#f3f6f9;--card:#fff;--ink:#0f2233;--mute:#5d6f7e;--line:#dbe3ea;--flame:#1f6feb;--good:#13805a;--bad:#c23b3b;--tile:#eaf0f6;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root{--bg:#07111b;--card:#0e1c2a;--ink:#e8f0f7;--mute:#8da1b2;--line:#1d3043;--flame:#5aa2ff;--good:#4cc795;--bad:#ff7b7b;--tile:#122436;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 "Avenir Next","Segoe UI",system-ui,sans-serif}
+main{max-width:760px;margin:0 auto;padding:16px}
+h1{font-size:22px;margin:4px 0 2px}
+.top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.sub{color:var(--mute);font-size:14px;margin:0 0 14px}
+.link{background:none;border:0;color:var(--flame);font:inherit;font-size:14px;cursor:pointer;padding:6px}
+nav{display:flex;gap:6px;background:var(--tile);padding:4px;border-radius:12px;margin-bottom:14px}
+nav button{flex:1;border:0;background:none;color:var(--mute);padding:10px 6px;border-radius:9px;font:inherit;font-weight:600;cursor:pointer}
+nav button[aria-selected="true"]{background:var(--card);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.15)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.tile{background:var(--tile);border-radius:10px;padding:12px}
+.tile small{display:block;color:var(--mute);font-size:13px}
+.tile b{font-size:22px}
+.profit{display:flex;justify-content:space-between;align-items:baseline;border-top:1px solid var(--line);margin-top:14px;padding-top:14px}
+.profit b{font-size:26px;color:var(--good)}
+.row{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid var(--line)}
+.row:last-child{border-bottom:0}.row>span:first-child{color:var(--mute)}
+.ok{color:var(--good)}.warn{color:var(--bad)}
+h2{font-size:16px;margin:0 0 8px}
+label{display:block;font-size:13px;color:var(--mute);margin-bottom:10px}
+input{width:100%;margin-top:4px;padding:11px;border-radius:9px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:inherit}
+input:focus,button:focus-visible{outline:2px solid var(--flame);outline-offset:1px}
+.btn{width:100%;padding:13px;border:0;border-radius:11px;background:var(--flame);color:#fff;font:inherit;font-weight:700;cursor:pointer}
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:14px;min-width:480px}
+th,td{text-align:right;padding:8px 6px;border-bottom:1px solid var(--line);white-space:nowrap}
+th:first-child,td:first-child{text-align:left}th{color:var(--mute);font-weight:600}
+.note{font-size:13px;color:var(--mute)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:14px}
+</style>
+</head>
+<body>
+<main>
+<div class="top"><div><h1>Decy’s Energy Solution</h1><p class="sub" id="who"></p></div><button class="link" id="out" hidden>Sign out</button></div>
+<div id="app"><div class="card note">Loading…</div></div>
+</main>
+<script type="module">
+import {initializeApp} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+import {getAuth,onAuthStateChanged,signInWithEmailAndPassword,signOut} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+import {getFirestore,doc,getDoc,setDoc,collection,onSnapshot} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+
+const app=initializeApp({
+  apiKey:"AIzaSyCqvBAgLTmb9uHwQ5Vg1hknIAbGz7cwGNs",
+  authDomain:"decys-energy.firebaseapp.com",
+  projectId:"decys-energy",
+  storageBucket:"decys-energy.firebasestorage.app",
+  messagingSenderId:"150470704958",
+  appId:"1:150470704958:web:c1c1b0fc711e8cec80f66f"
+});
+const auth=getAuth(app),db=getFirestore(app);
+const N=n=>"₦"+Math.round(n).toLocaleString("en-NG"),K=n=>(Math.round(n*10)/10).toLocaleString("en-NG")+"kg";
+const $=id=>document.getElementById(id);
+let me=null,isOwner=false,tab="report",sales=[],costs={},msg="",unsubs=[];
+
+function loginView(err=""){
+ $("who").textContent="Staff sign-in";$("out").hidden=true;
+ $("app").innerHTML=`<div class="card"><h2>Sign in</h2>
+ <label>Email<input id="em" type="email" autocomplete="username"></label>
+ <label>Password<input id="pw" type="password" autocomplete="current-password"></label>
+ <p class="warn note" id="err">${err}</p><button class="btn" id="go">Sign in</button></div>`;
+ const go=async()=>{try{await signInWithEmailAndPassword(auth,$("em").value.trim(),$("pw").value)}catch(e){$("err").textContent="Wrong email or password."}};
+ $("go").onclick=go;$("pw").onkeydown=e=>{if(e.key=="Enter")go()}}
+
+function rows(){return sales.map(d=>{
+ const cost=costs[d.date],total=d.sold*d.price,expected=d.open+d.recv-d.sold,diff=d.count-expected,credit=total-d.cash-d.bank;
+ const gross=cost==null?null:d.sold*(d.price-cost);
+ return {...d,cost,total,expected,diff,credit,gross,op:gross==null?null:gross-d.exp}})}
+const who=r=>r.by||"Staff";
+function report(r){
+ const dc=Math.abs(r.diff)<1?"ok":"warn";
+ const money=isOwner?(r.gross==null?`<div class="card note">Add the cost per kg for ${r.date} (Add a day tab) to see profit.</div>`:`<div class="profit"><span><b style="font-size:16px;color:var(--ink)">Operating profit</b><br><span class="note">Before finance costs, taxes and other unallocated expenses.</span></span><b>${N(r.op)}</b></div>`):"";
+ return `<div class="card"><h2>${r.date} · Daily report</h2><div class="grid">
+ <div class="tile"><small>Total sales</small><b>${N(r.total)}</b></div>
+ <div class="tile"><small>Quantity sold</small><b>${K(r.sold)}</b></div>
+ <div class="tile"><small>${isOwner?"Gross contribution":"Selling price / kg"}</small><b>${isOwner?(r.gross==null?"–":N(r.gross)):N(r.price)}</b></div>
+ <div class="tile"><small>Operating expenses</small><b>${N(r.exp)}</b></div></div>${money}</div>
+ <div class="card"><h2>Stock reconciliation</h2>
+ <div class="row"><span>Opening stock</span><span>${K(r.open)}</span></div>
+ <div class="row"><span>Stock received</span><span>${K(r.recv)}</span></div>
+ <div class="row"><span>Sold</span><span>${K(r.sold)}</span></div>
+ <div class="row"><span>Expected closing</span><span>${K(r.expected)}</span></div>
+ <div class="row"><span>Physical count</span><span>${K(r.count)}</span></div>
+ <div class="row"><span>Discrepancy</span><b class="${dc}">${r.diff>0?"+":""}${K(r.diff)} ${dc=="ok"?"✓":"· investigate"}</b></div></div>
+ <div class="card"><h2>Cash and credit</h2>
+ <div class="row"><span>Cash received</span><span>${N(r.cash)}</span></div>
+ <div class="row"><span>Bank received</span><span>${N(r.bank)}</span></div>
+ <div class="row"><span>Sales not yet paid</span><b class="${r.credit>0?"warn":"ok"}">${N(Math.max(r.credit,0))}</b></div>
+ <div class="row"><span>Entered by</span><span>${who(r)}</span></div></div>`}
+function history(rs){
+ const per={};rs.forEach(r=>{const p=per[who(r)]=per[who(r)]||{s:0,k:0,d:0,n:0};p.s+=r.total;p.k+=r.sold;p.d+=Math.abs(r.diff);p.n++});
+ return `<div class="card"><h2>All days</h2><div class="scroll"><table><tr><th>Date</th><th>Sales</th><th>Kg</th>${isOwner?"<th>Profit</th>":""}<th>Stock diff</th><th>Credit</th></tr>
+ ${rs.slice().reverse().map(r=>`<tr><td>${r.date.slice(5)}</td><td>${N(r.total)}</td><td>${r.sold}</td>${isOwner?`<td>${r.op==null?"–":N(r.op)}</td>`:""}<td class="${Math.abs(r.diff)<1?"ok":"warn"}">${r.diff>0?"+":""}${Math.round(r.diff*10)/10}</td><td>${N(Math.max(r.credit,0))}</td></tr>`).join("")}</table></div></div>
+ ${isOwner?`<div class="card"><h2>Employee performance</h2>${Object.entries(per).map(([n,p])=>`<div class="row"><span>${n} · ${p.n} day${p.n>1?"s":""}</span><span>${N(p.s)} · ${p.k}kg · <span class="${p.d<1?"ok":"warn"}">${Math.round(p.d*10)/10}kg stock gap</span></span></div>`).join("")}</div>`:""}`}
+const nextDate=s=>{const d=new Date(s+"T00:00:00Z");d.setUTCDate(d.getUTCDate()+1);return d.toISOString().slice(0,10)};
+function entry(rs){
+ const l=rs[rs.length-1],f=(id,lab,v,t="number")=>`<label>${lab}<input id="${id}" type="${t}" inputmode="decimal" step="any" value="${v}"></label>`;
+ return `<div class="card"><h2>Add a day</h2>
+ <p class="note">${l?`Opening stock comes from the last physical count (${K(l.count)}).`:"First entry: type your current stock as the opening stock."}</p>
+ ${f("date","Date",l?nextDate(l.date):new Date().toISOString().slice(0,10),"date")}
+ ${l?"":f("open","Opening stock (kg)","")}
+ ${f("sold","Kilograms sold","")}${f("price","Selling price per kg (₦)",l?l.price:"")}
+ ${f("recv","Stock received (kg)",0)}${f("count","Physical stock count at close (kg)","")}
+ ${f("exp","Operating expenses (₦)",0)}${f("cash","Cash received (₦)","")}${f("bank","Bank received (₦)",0)}
+ ${isOwner?f("cost","Cost per kg (₦, owner only)",l&&l.cost!=null?l.cost:""):""}
+ <button class="btn" id="save">Save day</button></div>`}
+function render(){
+ const rs=rows(),v=$("app");
+ if(!$("view")){v.innerHTML=`<nav role="tablist"><button data-tab="report">Daily report</button><button data-tab="entry">Add a day</button><button data-tab="history">History</button></nav><div id="view"></div>`;
+  v.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{tab=b.dataset.tab;$("view").innerHTML="";render()})}
+ v.querySelectorAll("nav button").forEach(b=>b.setAttribute("aria-selected",b.dataset.tab==tab));
+ const w=$("view");
+ if(tab=="entry"){if(!w.querySelector("#save")){w.innerHTML=entry(rs);$("save").onclick=save}}
+ else if(!rs.length)w.innerHTML=`<div class="card"><h2>No days recorded yet</h2><p class="note">Open Add a day and enter the first day’s figures.</p></div>`;
+ else w.innerHTML=tab=="report"?report(rs[rs.length-1]):history(rs);
+ if(msg){w.insertAdjacentHTML("beforeend",`<div class="toast" role="status">${msg}</div>`);msg="";setTimeout(()=>document.querySelector(".toast")?.remove(),2200)}}
+async function save(){
+ const g=i=>$(i)?.value,n=i=>parseFloat(g(i));
+ const need=["sold","price","recv","count","exp","cash","bank"].concat(sales.length?[]:["open"]);
+ if(!g("date")||need.some(i=>isNaN(n(i)))){alert("Fill in every field. Use 0 where nothing applies.");return}
+ const date=g("date");
+ if(!isOwner&&sales.some(s=>s.date==date)){alert("That day is already saved. Ask the owner to correct it.");return}
+ const prev=sales.filter(s=>s.date<date).pop(),open=prev?prev.count:n("open");
+ if(isNaN(open)){alert("Opening stock needed for this date.");return}
+ try{
+  await setDoc(doc(db,"sales",date),{date,open,sold:n("sold"),price:n("price"),recv:n("recv"),count:n("count"),exp:n("exp"),cash:n("cash"),bank:n("bank"),by:(me.email||"").split("@")[0],uid:me.uid});
+  if(isOwner&&!isNaN(n("cost")))await setDoc(doc(db,"owner","cost-"+date),{date,cost:n("cost")});
+  msg="Day saved";tab="report";$("view").innerHTML="";render()
+ }catch(e){alert("Could not save. Check your connection and try again.")}}
+
+$("out").onclick=()=>signOut(auth);
+onAuthStateChanged(auth,async u=>{
+ unsubs.forEach(f=>f());unsubs=[];sales=[];costs={};me=u;
+ if(!u){loginView();return}
+ try{
+  const r=await getDoc(doc(db,"roles",u.uid));
+  if(!r.exists()){$("who").textContent=u.email;$("out").hidden=false;$("app").innerHTML=`<div class="card"><h2>Access not set up</h2><p class="note">Your account has no role yet. Ask the owner to add it.</p></div>`;return}
+  isOwner=r.data().role=="owner";
+  $("who").textContent=(isOwner?"Owner view · ":"Staff view · ")+u.email;$("out").hidden=false;
+  $("app").innerHTML="";render();
+  unsubs.push(onSnapshot(collection(db,"sales"),s=>{sales=s.docs.map(d=>d.data()).sort((a,b)=>a.date<b.date?-1:1);$("view").innerHTML="";render()},()=>{$("app").innerHTML='<div class="card warn">Could not load records.</div>'}));
+  if(isOwner)unsubs.push(onSnapshot(collection(db,"owner"),s=>{costs={};s.docs.forEach(d=>{const x=d.data();costs[x.date]=x.cost});$("view").innerHTML="";render()},()=>{}));
+ }catch(e){loginView("Could not connect. Check your internet and sign in again.")}
+});
+</script>
+</body>
+</html>
