@@ -137,9 +137,13 @@ async function save(){
  if(!isOwner&&sales.some(s=>s.date==date)){alert("That day is already saved. Ask the owner to correct it.");return}
  const prev=sales.filter(s=>s.date<date).pop(),open=prev?prev.count:n("open");
  if(isNaN(open)){alert("Opening stock needed for this date.");return}
+  const costVal=n("cost");
+
  try{
   await setDoc(doc(db,"sales",date),{date,open,sold:n("sold"),price:n("price"),recv:n("recv"),count:n("count"),exp:n("exp"),cash:n("cash"),bank:n("bank"),by:(me.email||"").split("@")[0],uid:me.uid});
   if(isOwner&&!isNaN(n("cost")))await setDoc(doc(db,"owner","cost-"+date),{date,cost:n("cost")});
+   if(isOwner&&!isNaN(costVal))await setDoc(doc(db,"owner","cost-"+date),{date,cost:costVal});
+
   msg="Day saved";tab="report";$("view").innerHTML="";render()
  }catch(e){alert("Could not save. Check your connection and try again.")}}
 
