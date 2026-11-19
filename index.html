@@ -13,14 +13,15 @@
 box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 @media (prefers-color-scheme:dark){:root{--bg:#07111b;--card:#0e1c2a;--ink:#e8f0f7;--mute:#8da1b2;--line:#1d3043;--flame:#5aa2ff;--good:#4cc795;--bad:#ff7b7b;--tile:#122436;color-scheme:dark}}
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 "Avenir Next","Segoe UI",system-ui,sans-serif}
 main{max-width:760px;margin:0 auto;padding:16px}
 h1{font-size:22px;margin:4px 0 2px}
 .top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
 .sub{color:var(--mute);font-size:14px;margin:0 0 14px}
 .link{background:none;border:0;color:var(--flame);font:inherit;font-size:14px;cursor:pointer;padding:6px}
-nav{display:flex;gap:6px;background:var(--tile);padding:4px;border-radius:12px;margin-bottom:14px}
-nav button{flex:1;border:0;background:none;color:var(--mute);padding:10px 4px;border-radius:9px;font:inherit;font-weight:600;font-size:14px;cursor:pointer}
+nav{display:flex;gap:4px;background:var(--tile);padding:4px;border-radius:12px;margin-bottom:14px}
+nav button{flex:1;border:0;background:none;color:var(--mute);padding:10px 2px;border-radius:9px;font:inherit;font-weight:600;font-size:13px;cursor:pointer}
 nav button[aria-selected="true"]{background:var(--card);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.15)}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -71,8 +72,10 @@ const auth=getAuth(app),db=getFirestore(app);
 const N=n=>"₦"+Math.round(n).toLocaleString("en-NG"),K=n=>(Math.round(n*10)/10).toLocaleString("en-NG")+"kg";
 const $=id=>document.getElementById(id);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const today=()=>new Date().toISOString().slice(0,10);
 let me=null,isOwner=false,tab="report",sales=[],costs={},msg="",unsubs=[];
 let ledgers={customer:[],supplier:[]},bal={kind:"customer",party:null,mode:"list"};
+let invLog=[],inv={view:"stock",item:null,mode:"list"};
 
 function loginView(err=""){
  $("who").textContent="Staff sign-in";$("out").hidden=true;
@@ -90,7 +93,7 @@ function rows(){return sales.map(d=>{
 const who=r=>r.by||"Staff";
 function report(r){
  const dc=Math.abs(r.diff)<1?"ok":"warn";
- const money=isOwner?(r.gross==null?`<div class="card note">Add the cost per kg for ${r.date} (Add a day tab) to see profit.</div>`:`<div class="profit"><span><b style="font-size:16px;color:var(--ink)">Operating profit</b><br><span class="note">Before finance costs, taxes and other unallocated expenses.</span></span><b>${N(r.op)}</b></div>`):"";
+ const money=isOwner?(r.gross==null?`<div class="card note">Add the cost per kg for ${r.date} (Add day tab) to see profit.</div>`:`<div class="profit"><span><b style="font-size:16px;color:var(--ink)">Operating profit</b><br><span class="note">Before finance costs, taxes and other unallocated expenses.</span></span><b>${N(r.op)}</b></div>`):"";
  return `<div class="card"><h2>${r.date} · Daily report</h2><div class="grid">
  <div class="tile"><small>Total sales</small><b>${N(r.total)}</b></div>
  <div class="tile"><small>Quantity sold</small><b>${K(r.sold)}</b></div>
@@ -118,7 +121,7 @@ function entry(rs){
  const l=rs[rs.length-1],f=(id,lab,v,t="number")=>`<label>${lab}<input id="${id}" type="${t}" inputmode="decimal" step="any" value="${v}"></label>`;
  return `<div class="card"><h2>Add a day</h2>
  <p class="note">${l?`Opening stock comes from the last physical count (${K(l.count)}).`:"First entry: type your current stock as the opening stock."}</p>
- ${f("date","Date",l?nextDate(l.date):new Date().toISOString().slice(0,10),"date")}
+ ${f("date","Date",l?nextDate(l.date):today(),"date")}
  ${l?"":f("open","Opening stock (kg)","")}
  ${f("sold","Kilograms sold","")}${f("price","Selling price per kg (₦)",l?l.price:"")}
  ${f("recv","Stock received (kg)",0)}${f("count","Physical stock count at close (kg)","")}
@@ -144,7 +147,7 @@ function ledgerForm(){
  <label>${L.ent} name<input id="lp" list="pl" autocomplete="off" value="${cur?esc(cur.name):""}"><datalist id="pl">${ps.map(p=>`<option value="${esc(p.name)}">`).join("")}</datalist></label>
  <label>What happened<select id="ldir"><option value="up">${L.up}</option><option value="down">${L.down}</option></select></label>
  <label>Amount (₦)<input id="la" type="number" inputmode="decimal" step="any"></label>
- <label>Date<input id="ld" type="date" value="${new Date().toISOString().slice(0,10)}"></label>
+ <label>Date<input id="ld" type="date" value="${today()}"></label>
  <label>Note (optional)<input id="ln"></label>
  <button class="btn" id="lsave">Save entry</button>
  <button class="link" id="lcancel" style="width:100%;margin-top:6px">Cancel</button></div>`}
@@ -184,21 +187,103 @@ async function saveLedger(){
   bal.party=key;bal.mode="list";msg="Entry saved";$("view").innerHTML="";render()
  }catch(e){alert("Could not save. Check your connection and try again.")}}
 
+/* ---------- Inventory ---------- */
+const TL={in:"Received",out:"Sold / used",loan:"Loaned out",return:"Returned",adjust:"Count correction"};
+const sgn=e=>(e.type=="in"||e.type=="return"||e.type=="adjust")?e.qty:-e.qty;
+function stockMap(){
+ const m={};
+ invLog.forEach(e=>{
+  const p=m[e.key]=m[e.key]||{key:e.key,name:e.item,qty:0,last:""};
+  p.qty+=sgn(e);
+  if(e.date>=p.last){p.last=e.date;p.name=e.item}});
+ return m}
+function loanMap(){
+ const m={};
+ invLog.forEach(e=>{
+  if(e.type!="loan"&&e.type!="return")return;
+  const k=e.ckey+"|"+e.key,p=m[k]=m[k]||{ckey:e.ckey,key:e.key,cust:e.cust,item:e.item,qty:0};
+  p.qty+=e.type=="loan"?e.qty:-e.qty;p.cust=e.cust;p.item=e.item});
+ return Object.values(m)}
+function invForm(){
+ const sm=stockMap(),items=Object.values(sm),cur=inv.item&&sm[inv.item];
+ const cs=[...new Set([...partyList("customer").map(p=>p.name),...loanMap().map(x=>x.cust)])];
+ return `<div class="card"><h2>Record movement</h2>
+ <label>Item<input id="iitem" list="il" autocomplete="off" placeholder="e.g. 12.5kg filled cylinder" value="${cur?esc(cur.name):""}"><datalist id="il">${items.map(p=>`<option value="${esc(p.name)}">`).join("")}</datalist></label>
+ <label>What happened<select id="itype"><option value="in">Received into stock</option><option value="out">Sold / used</option><option value="loan">Loaned out to customer</option><option value="return">Returned by customer</option><option value="count">Stock count (type what you counted)</option></select></label>
+ <label>Quantity<input id="iq" type="number" inputmode="numeric" step="1" min="0"></label>
+ <label id="icw" hidden>Customer<input id="icu" list="icl" autocomplete="off"><datalist id="icl">${cs.map(n=>`<option value="${esc(n)}">`).join("")}</datalist></label>
+ <label>Date<input id="idate" type="date" value="${today()}"></label>
+ <label>Note (optional)<input id="inote"></label>
+ <button class="btn" id="isave">Save</button>
+ <button class="link" id="icancel" style="width:100%;margin-top:6px">Cancel</button></div>`}
+function invView(){
+ if(inv.mode=="add")return invForm();
+ const sm=stockMap(),items=Object.values(sm).sort((a,b)=>a.name.localeCompare(b.name));
+ const p=inv.item&&sm[inv.item];
+ if(p){
+  const es=invLog.filter(e=>e.key==p.key).sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:(b.ts||0)-(a.ts||0));
+  return `<button class="link" id="iback">‹ All items</button>
+  <div class="card"><h2>${esc(p.name)}</h2><div class="tile"><small>In stock</small><b class="${p.qty<0?"warn":""}">${p.qty}</b></div></div>
+  <button class="btn" id="iadd" style="margin-bottom:14px">+ Record movement</button>
+  <div class="card"><h2>History</h2>${es.map(e=>`<div class="row"><span>${e.date} · ${TL[e.type]}${e.cust?" · "+esc(e.cust):""}${e.note?" · "+esc(e.note):""}<br><span class="note">by ${esc(e.by||"Staff")}</span></span><span><b class="${sgn(e)>0?"ok":"warn"}">${sgn(e)>0?"+":""}${sgn(e)}</b>${isOwner?`<br><button class="link" data-idel="${esc(e.id)}">Delete</button>`:""}</span></div>`).join("")}</div>`}
+ const seg=`<div class="seg"><button data-iv="stock" aria-pressed="${inv.view=="stock"}">In stock</button><button data-iv="loans" aria-pressed="${inv.view=="loans"}">On loan</button></div>`;
+ const add=`<button class="btn" id="iadd" style="margin-bottom:14px">+ Record movement</button>`;
+ if(inv.view=="loans"){
+  const ls=loanMap().filter(x=>x.qty!=0).sort((a,b)=>a.cust.localeCompare(b.cust)||a.item.localeCompare(b.item));
+  const tot=ls.reduce((a,x)=>a+x.qty,0);
+  return `${seg}<div class="card"><div class="tile"><small>Total items on loan</small><b>${tot}</b></div></div>${add}
+  <div class="card"><h2>Items on loan</h2>${ls.length?ls.map(x=>`<div class="row"><span>${esc(x.cust)} · ${esc(x.item)}</span><b class="${x.qty>0?"warn":"ok"}">${x.qty}</b></div>`).join(""):`<p class="note">Nothing on loan.</p>`}</div>`}
+ return `${seg}${add}<div class="card"><h2>Items in stock</h2>${items.length?items.map(x=>`<div class="row prow" data-i="${esc(x.key)}"><span>${esc(x.name)}</span><b class="${x.qty<0?"warn":""}">${x.qty}</b></div>`).join(""):`<p class="note">No items yet. Tap Record movement and add your first item, for example "12.5kg filled cylinder", with a stock count.</p>`}</div>`}
+function wireInv(){
+ const w=$("view"),go=()=>{$("view").innerHTML="";render()};
+ w.querySelectorAll("[data-iv]").forEach(b=>b.onclick=()=>{inv.view=b.dataset.iv;go()});
+ w.querySelectorAll("[data-i]").forEach(b=>b.onclick=()=>{inv.item=b.dataset.i;go()});
+ w.querySelectorAll("[data-idel]").forEach(b=>b.onclick=async()=>{
+  if(!confirm("Delete this entry?"))return;
+  try{await deleteDoc(doc(db,"inventoryLog",b.dataset.idel))}catch(e){alert("Could not delete.")}});
+ const bk=$("iback");if(bk)bk.onclick=()=>{inv.item=null;go()};
+ const ad=$("iadd");if(ad)ad.onclick=()=>{inv.mode="add";go()};
+ const cn=$("icancel");if(cn)cn.onclick=()=>{inv.mode="list";go()};
+ const t=$("itype");if(t){const f=()=>{$("icw").hidden=!(t.value=="loan"||t.value=="return")};t.onchange=f;f()}
+ const sv=$("isave");if(sv)sv.onclick=saveInv}
+async function saveInv(){
+ const item=$("iitem").value.trim(),t=$("itype").value,q=parseFloat($("iq").value),cust=$("icu").value.trim(),date=$("idate").value;
+ if(!item||isNaN(q)||q<0||!date||(t!="count"&&q==0)){alert("Enter the item, a quantity and the date.");return}
+ const isLoan=t=="loan"||t=="return";
+ if(isLoan&&!cust){alert("Enter the customer.");return}
+ const key=item.toLowerCase(),ckey=cust.toLowerCase(),sm=stockMap(),curQ=sm[key]?sm[key].qty:0;
+ let type=t,qty=q,note=$("inote").value.trim();
+ if(t=="count"){
+  qty=q-curQ;type="adjust";
+  if(qty==0){alert("That matches the current stock. Nothing to record.");return}
+  note="Count: "+q+(note?" · "+note:"")}
+ else if((t=="out"||t=="loan")&&curQ-q<0&&!confirm("This takes "+item+" below zero ("+(curQ-q)+"). Save anyway?"))return;
+ if(t=="return"){
+  const o=loanMap().find(x=>x.ckey==ckey&&x.key==key),have=o?o.qty:0;
+  if(q>have&&!confirm(cust+" only has "+have+" of "+item+" on loan. Save anyway?"))return}
+ const id=Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+ try{
+  await setDoc(doc(db,"inventoryLog",id),{id,key,item,type,qty,date,note,cust:isLoan?cust:"",ckey:isLoan?ckey:"",by:(me.email||"").split("@")[0],uid:me.uid,ts:Date.now()});
+  inv.item=key;inv.mode="list";msg="Saved";$("view").innerHTML="";render()
+ }catch(e){alert("Could not save. Check your connection and try again.")}}
+
 /* ---------- Render ---------- */
 function render(){
  const rs=rows(),v=$("app");
- if(!$("view")){v.innerHTML=`<nav role="tablist"><button data-tab="report">Daily report</button><button data-tab="entry">Add a day</button><button data-tab="balances">Balances</button><button data-tab="history">History</button></nav><div id="view"></div>`;
-  v.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{tab=b.dataset.tab;if(tab=="balances"){bal.mode="list";bal.party=null}$("view").innerHTML="";render()})}
+ if(!$("view")){v.innerHTML=`<nav role="tablist"><button data-tab="report">Report</button><button data-tab="entry">Add day</button><button data-tab="balances">Balances</button><button data-tab="inventory">Inventory</button><button data-tab="history">History</button></nav><div id="view"></div>`;
+  v.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{tab=b.dataset.tab;if(tab=="balances"){bal.mode="list";bal.party=null}if(tab=="inventory"){inv.mode="list";inv.item=null}$("view").innerHTML="";render()})}
  v.querySelectorAll("nav button").forEach(b=>b.setAttribute("aria-selected",b.dataset.tab==tab));
  const w=$("view");
  if(tab=="entry"){if(!w.querySelector("#save")){w.innerHTML=entry(rs);$("save").onclick=save}}
  else if(tab=="balances"){w.innerHTML=balances();wireBal()}
- else if(!rs.length)w.innerHTML=`<div class="card"><h2>No days recorded yet</h2><p class="note">Open Add a day and enter the first day’s figures.</p></div>`;
+ else if(tab=="inventory"){w.innerHTML=invView();wireInv()}
+ else if(!rs.length)w.innerHTML=`<div class="card"><h2>No days recorded yet</h2><p class="note">Open Add day and enter the first day’s figures.</p></div>`;
  else w.innerHTML=tab=="report"?report(rs[rs.length-1]):history(rs);
  if(msg){w.insertAdjacentHTML("beforeend",`<div class="toast" role="status">${msg}</div>`);msg="";setTimeout(()=>document.querySelector(".toast")?.remove(),2200)}}
 function redraw(){
  if(tab=="entry"&&$("save"))return;
  if(tab=="balances"&&bal.mode=="add"&&$("lsave"))return;
+ if(tab=="inventory"&&inv.mode=="add"&&$("isave"))return;
  $("view").innerHTML="";render()}
 async function save(){
  const g=i=>$(i)?.value,n=i=>parseFloat(g(i));
@@ -217,7 +302,7 @@ async function save(){
 
 $("out").onclick=()=>signOut(auth);
 onAuthStateChanged(auth,async u=>{
- unsubs.forEach(f=>f());unsubs=[];sales=[];costs={};ledgers={customer:[],supplier:[]};me=u;
+ unsubs.forEach(f=>f());unsubs=[];sales=[];costs={};ledgers={customer:[],supplier:[]};invLog=[];me=u;
  if(!u){loginView();return}
  try{
   const r=await getDoc(doc(db,"roles",u.uid));
@@ -227,6 +312,7 @@ onAuthStateChanged(auth,async u=>{
   $("app").innerHTML="";render();
   unsubs.push(onSnapshot(collection(db,"sales"),s=>{sales=s.docs.map(d=>d.data()).sort((a,b)=>a.date<b.date?-1:1);redraw()},()=>{$("app").innerHTML='<div class="card warn">Could not load records.</div>'}));
   unsubs.push(onSnapshot(collection(db,"customerLedger"),s=>{ledgers.customer=s.docs.map(d=>d.data());redraw()},()=>{}));
+  unsubs.push(onSnapshot(collection(db,"inventoryLog"),s=>{invLog=s.docs.map(d=>d.data());redraw()},()=>{}));
   if(isOwner){
    unsubs.push(onSnapshot(collection(db,"owner"),s=>{costs={};s.docs.forEach(d=>{const x=d.data();costs[x.date]=x.cost});redraw()},()=>{}));
    unsubs.push(onSnapshot(collection(db,"supplierLedger"),s=>{ledgers.supplier=s.docs.map(d=>d.data());redraw()},()=>{}));
