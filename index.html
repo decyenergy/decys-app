@@ -39,15 +39,22 @@ label{display:block;font-size:13px;color:var(--mute);margin-bottom:10px}
 input,select{width:100%;margin-top:4px;padding:11px;border-radius:9px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:inherit}
 input:focus,select:focus,button:focus-visible{outline:2px solid var(--flame);outline-offset:1px}
 .btn{width:100%;padding:13px;border:0;border-radius:11px;background:var(--flame);color:#fff;font:inherit;font-weight:700;cursor:pointer}
-.seg{display:flex;gap:6px;margin-bottom:12px}
+.seg{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
 .seg button{border:1px solid var(--line);background:none;color:var(--mute);padding:8px 16px;border-radius:20px;font:inherit;cursor:pointer}
 .seg button[aria-pressed="true"]{background:var(--flame);border-color:var(--flame);color:#fff}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .scroll{overflow-x:auto}
 table{border-collapse:collapse;width:100%;font-size:14px;min-width:480px}
 th,td{text-align:right;padding:8px 6px;border-bottom:1px solid var(--line);white-space:nowrap}
 th:first-child,td:first-child{text-align:left}th{color:var(--mute);font-weight:600}
+tr[data-day]{cursor:pointer}
 .note{font-size:13px;color:var(--mute)}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:14px}
+@media print{
+:root{--bg:#fff;--card:#fff;--ink:#000;--mute:#444;--line:#ccc;--tile:#f2f2f2;--good:#0a6b4a;--bad:#b00;padding:0}
+nav,.noprint,.top button,.toast{display:none!important}
+.card{break-inside:avoid;border-color:#ccc}
+}
 </style>
 </head>
 <body>
@@ -76,6 +83,7 @@ const today=()=>new Date().toISOString().slice(0,10);
 let me=null,isOwner=false,tab="report",sales=[],costs={},msg="",unsubs=[];
 let ledgers={customer:[],supplier:[]},bal={kind:"customer",party:null,mode:"list"};
 let invLog=[],inv={view:"stock",item:null,mode:"list"};
+let hist={day:null,from:"",to:""};
 
 function loginView(err=""){
  $("who").textContent="Staff sign-in";$("out").hidden=true;
@@ -111,11 +119,53 @@ function report(r){
  <div class="row"><span>Bank received</span><span>${N(r.bank)}</span></div>
  <div class="row"><span>Sales not yet paid</span><b class="${r.credit>0?"warn":"ok"}">${N(Math.max(r.credit,0))}</b></div>
  <div class="row"><span>Entered by</span><span>${who(r)}</span></div></div>`}
-function history(rs){
- const per={};rs.forEach(r=>{const p=per[who(r)]=per[who(r)]||{s:0,k:0,d:0,n:0};p.s+=r.total;p.k+=r.sold;p.d+=Math.abs(r.diff);p.n++});
- return `<div class="card"><h2>All days</h2><div class="scroll"><table><tr><th>Date</th><th>Sales</th><th>Kg</th>${isOwner?"<th>Profit</th>":""}<th>Stock diff</th><th>Credit</th></tr>
- ${rs.slice().reverse().map(r=>`<tr><td>${r.date.slice(5)}</td><td>${N(r.total)}</td><td>${r.sold}</td>${isOwner?`<td>${r.op==null?"–":N(r.op)}</td>`:""}<td class="${Math.abs(r.diff)<1?"ok":"warn"}">${r.diff>0?"+":""}${Math.round(r.diff*10)/10}</td><td>${N(Math.max(r.credit,0))}</td></tr>`).join("")}</table></div></div>
- ${isOwner?`<div class="card"><h2>Employee performance</h2>${Object.entries(per).map(([n,p])=>`<div class="row"><span>${n} · ${p.n} day${p.n>1?"s":""}</span><span>${N(p.s)} · ${p.k}kg · <span class="${p.d<1?"ok":"warn"}">${Math.round(p.d*10)/10}kg stock gap</span></span></div>`).join("")}</div>`:""}`}
+
+/* ---------- History and statements ---------- */
+function historyView(rs){
+ if(hist.day){
+  const r=rs.find(x=>x.date==hist.day);
+  if(r)return `<div class="noprint"><button class="link" id="hback">‹ All days</button><button class="link" id="hprint">Print / Save PDF</button></div>`+report(r);
+  hist.day=null}
+ const f=hist.from||"0000-00-00",t=hist.to||"9999-99-99",sel=rs.filter(r=>r.date>=f&&r.date<=t);
+ const sum=k=>sel.reduce((a,r)=>a+(r[k]||0),0);
+ const period=(hist.from||hist.to)?`${hist.from||"start"} to ${hist.to||"today"}`:"All days";
+ const withCost=sel.filter(r=>r.gross!=null),missing=sel.length-withCost.length;
+ const unpaid=sel.reduce((a,r)=>a+Math.max(r.credit,0),0),gaps=sel.filter(r=>Math.abs(r.diff)>=1).length,netGap=sum("diff");
+ const per={};sel.forEach(r=>{const p=per[who(r)]=per[who(r)]||{s:0,k:0,d:0,n:0};p.s+=r.total;p.k+=r.sold;p.d+=Math.abs(r.diff);p.n++});
+ const ownerRows=isOwner?`<div class="tile"><small>Gross contribution</small><b>${N(withCost.reduce((a,r)=>a+r.gross,0))}</b></div>`:"";
+ return `<div class="card noprint"><h2>Statement period</h2>
+ <div class="seg"><button data-pre="month">This month</button><button data-pre="last">Last month</button><button data-pre="all">All</button></div>
+ <div class="two"><label>From<input id="hfrom" type="date" value="${hist.from}"></label><label>To<input id="hto" type="date" value="${hist.to}"></label></div>
+ <button class="link" id="hprint" style="padding-left:0">Print / Save PDF</button></div>
+ <div class="card"><h2>Statement · ${period}</h2><p class="note">${sel.length} day${sel.length==1?"":"s"}</p>
+ <div class="grid"><div class="tile"><small>Total sales</small><b>${N(sum("total"))}</b></div>
+ <div class="tile"><small>Quantity sold</small><b>${K(sum("sold"))}</b></div>
+ ${ownerRows}
+ <div class="tile"><small>Operating expenses</small><b>${N(sum("exp"))}</b></div></div>
+ ${isOwner?(withCost.length?`<div class="profit"><span><b style="font-size:16px;color:var(--ink)">Operating profit</b><br><span class="note">${missing?missing+" day"+(missing==1?"":"s")+" without a cost per kg not counted.":"Before finance costs, taxes and other unallocated expenses."}</span></span><b>${N(withCost.reduce((a,r)=>a+r.op,0))}</b></div>`:`<p class="note">Add a cost per kg to see profit for this period.</p>`):""}</div>
+ <div class="card"><h2>Cash, credit and stock</h2>
+ <div class="row"><span>Cash received</span><span>${N(sum("cash"))}</span></div>
+ <div class="row"><span>Bank received</span><span>${N(sum("bank"))}</span></div>
+ <div class="row"><span>Sales not yet paid</span><b class="${unpaid>0?"warn":"ok"}">${N(unpaid)}</b></div>
+ <div class="row"><span>Days with a stock gap</span><b class="${gaps?"warn":"ok"}">${gaps}</b></div>
+ <div class="row"><span>Net stock difference</span><b class="${Math.abs(netGap)<1?"ok":"warn"}">${netGap>0?"+":""}${K(netGap)}</b></div></div>
+ <div class="card"><h2>Days</h2><p class="note noprint">Tap a day to open its full statement.</p><div class="scroll"><table><tr><th>Date</th><th>Sales</th><th>Kg</th>${isOwner?"<th>Profit</th>":""}<th>Stock diff</th><th>Credit</th></tr>
+ ${sel.slice().reverse().map(r=>`<tr data-day="${r.date}"><td>${r.date.slice(5)}</td><td>${N(r.total)}</td><td>${r.sold}</td>${isOwner?`<td>${r.op==null?"–":N(r.op)}</td>`:""}<td class="${Math.abs(r.diff)<1?"ok":"warn"}">${r.diff>0?"+":""}${Math.round(r.diff*10)/10}</td><td>${N(Math.max(r.credit,0))}</td></tr>`).join("")||`<tr><td colspan="6" class="note">No days in this period.</td></tr>`}</table></div></div>
+ ${isOwner&&sel.length?`<div class="card"><h2>Employee performance</h2>${Object.entries(per).map(([n,p])=>`<div class="row"><span>${esc(n)} · ${p.n} day${p.n>1?"s":""}</span><span>${N(p.s)} · ${p.k}kg · <span class="${p.d<1?"ok":"warn"}">${Math.round(p.d*10)/10}kg stock gap</span></span></div>`).join("")}</div>`:""}`}
+function wireHist(){
+ const w=$("view"),go=()=>{$("view").innerHTML="";render()};
+ const bk=$("hback");if(bk)bk.onclick=()=>{hist.day=null;go()};
+ const pr=$("hprint");if(pr)pr.onclick=()=>window.print();
+ const fr=$("hfrom");if(fr)fr.onchange=()=>{hist.from=fr.value;go()};
+ const to=$("hto");if(to)to.onchange=()=>{hist.to=to.value;go()};
+ w.querySelectorAll("[data-pre]").forEach(b=>b.onclick=()=>{
+  const p=b.dataset.pre,n=new Date(),y=n.getUTCFullYear(),m=n.getUTCMonth(),iso=d=>d.toISOString().slice(0,10);
+  if(p=="month"){hist.from=iso(new Date(Date.UTC(y,m,1)));hist.to=today()}
+  else if(p=="last"){hist.from=iso(new Date(Date.UTC(y,m-1,1)));hist.to=iso(new Date(Date.UTC(y,m,0)))}
+  else{hist.from="";hist.to=""}
+  go()});
+ w.querySelectorAll("tr[data-day]").forEach(tr=>tr.onclick=()=>{hist.day=tr.dataset.day;go()})}
+
 const nextDate=s=>{const d=new Date(s+"T00:00:00Z");d.setUTCDate(d.getUTCDate()+1);return d.toISOString().slice(0,10)};
 function entry(rs){
  const l=rs[rs.length-1],f=(id,lab,v,t="number")=>`<label>${lab}<input id="${id}" type="${t}" inputmode="decimal" step="any" value="${v}"></label>`;
@@ -270,15 +320,17 @@ async function saveInv(){
 /* ---------- Render ---------- */
 function render(){
  const rs=rows(),v=$("app");
+ if(tab!="history")hist.day=null;
  if(!$("view")){v.innerHTML=`<nav role="tablist"><button data-tab="report">Report</button><button data-tab="entry">Add day</button><button data-tab="balances">Balances</button><button data-tab="inventory">Inventory</button><button data-tab="history">History</button></nav><div id="view"></div>`;
-  v.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{tab=b.dataset.tab;if(tab=="balances"){bal.mode="list";bal.party=null}if(tab=="inventory"){inv.mode="list";inv.item=null}$("view").innerHTML="";render()})}
+  v.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{tab=b.dataset.tab;if(tab=="balances"){bal.mode="list";bal.party=null}if(tab=="inventory"){inv.mode="list";inv.item=null}if(tab=="history")hist.day=null;$("view").innerHTML="";render()})}
  v.querySelectorAll("nav button").forEach(b=>b.setAttribute("aria-selected",b.dataset.tab==tab));
  const w=$("view");
  if(tab=="entry"){if(!w.querySelector("#save")){w.innerHTML=entry(rs);$("save").onclick=save}}
  else if(tab=="balances"){w.innerHTML=balances();wireBal()}
  else if(tab=="inventory"){w.innerHTML=invView();wireInv()}
  else if(!rs.length)w.innerHTML=`<div class="card"><h2>No days recorded yet</h2><p class="note">Open Add day and enter the first day’s figures.</p></div>`;
- else w.innerHTML=tab=="report"?report(rs[rs.length-1]):history(rs);
+ else if(tab=="history"){w.innerHTML=historyView(rs);wireHist()}
+ else w.innerHTML=report(rs[rs.length-1]);
  if(msg){w.insertAdjacentHTML("beforeend",`<div class="toast" role="status">${msg}</div>`);msg="";setTimeout(()=>document.querySelector(".toast")?.remove(),2200)}}
 function redraw(){
  if(tab=="entry"&&$("save"))return;
