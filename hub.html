@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Decy Hub">
+<meta name="theme-color" content="#0f2233">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<title>Decy Financial Hub</title>
+<style>
+:root{--bg:#f3f6f9;--card:#fff;--ink:#0f2233;--mute:#5d6f7e;--line:#dbe3ea;--flame:#1f6feb;--good:#13805a;--bad:#c23b3b;--tile:#eaf0f6;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root{--bg:#07111b;--card:#0e1c2a;--ink:#e8f0f7;--mute:#8da1b2;--line:#1d3043;--flame:#5aa2ff;--good:#4cc795;--bad:#ff7b7b;--tile:#122436;color-scheme:dark}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 "Avenir Next","Segoe UI",system-ui,sans-serif}
+main{max-width:760px;margin:0 auto;padding:16px}
+h1{font-size:22px;margin:4px 0 2px}
+.top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.sub{color:var(--mute);font-size:14px;margin:0 0 14px}
+.link{background:none;border:0;color:var(--flame);font:inherit;font-size:14px;cursor:pointer;padding:6px;text-decoration:none}
+nav{display:flex;gap:4px;background:var(--tile);padding:4px;border-radius:12px;margin-bottom:14px}
+nav button{flex:1;border:0;background:none;color:var(--mute);padding:10px 2px;border-radius:9px;font:inherit;font-weight:600;font-size:13px;cursor:pointer}
+nav button[aria-selected="true"]{background:var(--card);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.15)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.tile{background:var(--tile);border-radius:10px;padding:12px}
+.tile small{display:block;color:var(--mute);font-size:13px}
+.tile b{font-size:20px}
+.row{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid var(--line)}
+.row:last-child{border-bottom:0}.row>span:first-child{color:var(--mute)}
+.ok{color:var(--good)}.warn{color:var(--bad)}
+h2{font-size:16px;margin:0 0 8px}
+label{display:block;font-size:13px;color:var(--mute);margin-bottom:10px}
+input,select{width:100%;margin-top:4px;padding:11px;border-radius:9px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:inherit}
+input:focus,select:focus,button:focus-visible{outline:2px solid var(--flame);outline-offset:1px}
+.btn{width:100%;padding:13px;border:0;border-radius:11px;background:var(--flame);color:#fff;font:inherit;font-weight:700;cursor:pointer}
+.seg{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;align-items:center}
+.seg button{border:1px solid var(--line);background:none;color:var(--mute);padding:8px 14px;border-radius:20px;font:inherit;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--flame);border-color:var(--flame);color:#fff}
+.note{font-size:13px;color:var(--mute)}
+.sm{font-size:12px;color:var(--mute)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:14px}
+@media print{:root{--bg:#fff;--card:#fff;--ink:#000;--mute:#444;--line:#ccc;--tile:#f2f2f2;padding:0}nav,.noprint,.top button,.top a,.toast{display:none!important}.card{break-inside:avoid}}
+</style>
+</head>
+<body>
+<main>
+<div class="top"><div><h1>Decy Financial Hub</h1><p class="sub" id="who"></p></div><div><a class="link" href="./">‹ Business app</a><button class="link" id="out" hidden>Sign out</button></div></div>
+<div id="app"><div class="card note">Loading…</div></div>
+</main>
+<script type="module">
+import {initializeApp} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+import {getAuth,onAuthStateChanged,signInWithEmailAndPassword,signOut} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+import {getFirestore,doc,getDoc,setDoc,deleteDoc,collection,onSnapshot} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+
+const app=initializeApp({
+  apiKey:"AIzaSyCqvBAgLTmb9uHwQ5Vg1hknIAbGz7cwGNs",
+  authDomain:"decys-energy.firebaseapp.com",
+  projectId:"decys-energy",
+  storageBucket:"decys-energy.firebasestorage.app",
+  messagingSenderId:"150470704958",
+  appId:"1:150470704958:web:c1c1b0fc711e8cec80f66f"
+});
+const auth=getAuth(app),db=getFirestore(app);
+const N=n=>{const r=Math.round(n);return (r<0?"−":"")+"₦"+Math.abs(r).toLocaleString("en-NG")};
+const K=n=>(Math.round(n*10)/10).toLocaleString("en-NG")+"kg";
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const iso=d=>d.toISOString().slice(0,10);
+const today=()=>iso(new Date());
+const addDays=(s,n)=>{const d=new Date(s+"T00:00:00Z");d.setUTCDate(d.getUTCDate()+n);return iso(d)};
+const monday=s=>addDays(s,-((new Date(s+"T00:00:00Z").getUTCDay()+6)%7));
+const OPEN="Opening balance";
+let me=null,isOwner=false,tab="dash",per="week",pm=today().slice(0,7),msg="",unsubs=[];
+let sales=[],costs={},cust=[],supp=[],pers=[],wd=[];
+let wk=(()=>{const t=today(),d=new Date(t+"T00:00:00Z").getUTCDay();return d==0?t:addDays(t,-d)})();
+
+function loginView(err=""){
+ $("who").textContent="Owner sign-in";$("out").hidden=true;
+ $("app").innerHTML=`<div class="card"><h2>Sign in</h2>
+ <label>Email<input id="em" type="email" autocomplete="username"></label>
+ <label>Password<input id="pw" type="password" autocomplete="current-password"></label>
+ <p class="warn note" id="err">${err}</p><button class="btn" id="go">Sign in</button></div>`;
+ const go=async()=>{try{await signInWithEmailAndPassword(auth,$("em").value.trim(),$("pw").value)}catch(e){$("err").textContent="Wrong email or password."}};
+ $("go").onclick=go;$("pw").onkeydown=e=>{if(e.key=="Enter")go()}}
+
+/* ---------- calculations ---------- */
+function rows(){return sales.map(d=>{
+ const cost=costs[d.date],total=d.sold*d.price,diff=d.count-(d.open+d.recv-d.sold),credit=total-d.cash-d.bank;
+ const gross=cost==null?null:d.sold*(d.price-cost);
+ return {...d,total,diff,credit,op:gross==null?null:gross-d.exp,hasCost:cost!=null}})}
+function range(p){
+ const t=today(),y=+t.slice(0,4),m=+t.slice(5,7)-1,mk=(yy,mm,dd)=>iso(new Date(Date.UTC(yy,mm,dd)));
+ if(p=="week")return [monday(t),t];
+ if(p=="month")return [mk(y,m,1),t];
+ if(p=="last")return [mk(y,m-1,1),mk(y,m,0)];
+ return ["0000-00-00","9999-99-99"]}
+function biz(f,t){
+ const s=rows().filter(r=>r.date>=f&&r.date<=t),sum=k=>s.reduce((a,r)=>a+r[k],0),wc=s.filter(r=>r.hasCost);
+ return {n:s.length,sales:sum("total"),kg:sum("sold"),exp:sum("exp"),recv:sum("cash")+sum("bank"),
+  unpaid:s.reduce((a,r)=>a+Math.max(r.credit,0),0),gaps:s.filter(r=>Math.abs(r.diff)>=1).length,
+  profit:wc.reduce((a,r)=>a+r.op,0),withCost:wc.length,missing:s.length-wc.length}}
+const wds=(f,t)=>wd.filter(e=>e.date>=f&&e.date<=t).reduce((a,e)=>a+e.amount,0);
+function pst(f,t){
+ const s=pers.filter(e=>e.date>=f&&e.date<=t);
+ return {inc:s.filter(e=>e.type=="income"&&e.category!=OPEN).reduce((a,e)=>a+e.amount,0),
+  exp:s.filter(e=>e.type=="expense").reduce((a,e)=>a+e.amount,0)}}
+function partyTotal(list){return list.reduce((a,e)=>a+(e.dir=="up"?e.amount:-e.amount),0)}
+function accounts(){
+ const m={};
+ pers.forEach(e=>{m[e.account]=(m[e.account]||0)+(e.type=="income"?e.amount:-e.amount)});
+ wd.forEach(e=>{m[e.account]=(m[e.account]||0)+e.amount});
+ return Object.entries(m).sort((a,b)=>b[1]-a[1])}
+
+/* ---------- views ---------- */
+function segPer(){return `<div class="seg noprint">${[["week","This week"],["month","This month"],["last","Last month"],["all","All"]].map(([k,l])=>`<button data-per="${k}" aria-pressed="${per==k}">${l}</button>`).join("")}</div>`}
+function dash(){
+ const [f,t]=range(per),b=biz(f,t),p=pst(f,t),w=wds(f,t),acc=accounts(),pt=acc.reduce((a,x)=>a+x[1],0);
+ const label={week:"This week",month:"This month",last:"Last month",all:"All time"}[per];
+ return `${segPer()}
+ <div class="card"><h2>Business · ${label}</h2><p class="note">${b.n} day${b.n==1?"":"s"} recorded</p>
+ <div class="grid"><div class="tile"><small>Sales</small><b>${N(b.sales)}</b></div>
+ <div class="tile"><small>Quantity sold</small><b>${K(b.kg)}</b></div>
+ <div class="tile"><small>Operating profit</small><b class="${b.profit<0?"warn":""}">${b.withCost?N(b.profit):"–"}</b></div>
+ <div class="tile"><small>Operating expenses</small><b>${N(b.exp)}</b></div></div>
+ ${b.missing?`<p class="note warn">${b.missing} day${b.missing==1?"":"s"} without a cost per kg are left out of profit.</p>`:""}
+ <div class="row"><span>Cash + bank received</span><span>${N(b.recv)}</span></div>
+ <div class="row"><span>Sales not yet paid</span><b class="${b.unpaid>0?"warn":"ok"}">${N(b.unpaid)}</b></div>
+ <div class="row"><span>Withdrawn to personal</span><span>${N(w)}</span></div></div>
+ <div class="card"><h2>Owed to and by the business</h2>
+ <div class="row"><span>Customers owe you</span><b>${N(partyTotal(cust))}</b></div>
+ <div class="row"><span>You owe suppliers</span><b>${N(partyTotal(supp))}</b></div></div>
+ <div class="card"><h2>Personal · ${label}</h2>
+ <div class="grid"><div class="tile"><small>Income</small><b class="ok">${N(p.inc)}</b></div>
+ <div class="tile"><small>Spending</small><b>${N(p.exp)}</b></div></div>
+ <p class="note">Withdrawals from the business are shown above and are not counted as income here.</p></div>
+ <div class="card"><h2>Personal accounts</h2>${acc.length?acc.map(([n,v])=>`<div class="row"><span>${esc(n)}</span><b class="${v<0?"warn":""}">${N(v)}</b></div>`).join("")+`<div class="row"><span><b>Total</b></span><b>${N(pt)}</b></div>`:`<p class="note">No personal accounts yet. Add an "${OPEN}" income entry in the Personal tab for each account.</p>`}</div>`}
+
+const CATS=["Food","Transport","Rent","Utilities","Family","Health","Education","Airtime & data","Clothing","Savings","Other","Salary","Gift","Rental income",OPEN];
+function accList(){return [...new Set(["Cash wallet",...pers.map(e=>e.account),...wd.map(e=>e.account)])]}
+function persView(){
+ const es=pers.filter(e=>e.date.startsWith(pm)).sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:(b.ts||0)-(a.ts||0));
+ const inc=es.filter(e=>e.type=="income"&&e.category!=OPEN).reduce((a,e)=>a+e.amount,0),ex=es.filter(e=>e.type=="expense");
+ const out=ex.reduce((a,e)=>a+e.amount,0),cats={};ex.forEach(e=>cats[e.category]=(cats[e.category]||0)+e.amount);
+ return `<div class="card noprint"><h2>New personal entry</h2>
+ <label>Type<select id="pt"><option value="expense">Expense</option><option value="income">Income</option></select></label>
+ <label>Amount (₦)<input id="pa" type="number" inputmode="decimal" step="any"></label>
+ <label>Category<input id="pc" list="cl" autocomplete="off"><datalist id="cl">${CATS.map(c=>`<option value="${esc(c)}">`).join("")}</datalist></label>
+ <label>Account<input id="pac" list="al" autocomplete="off" value="Cash wallet"><datalist id="al">${accList().map(c=>`<option value="${esc(c)}">`).join("")}</datalist></label>
+ <label>Date<input id="pd" type="date" value="${today()}"></label>
+ <label>Note (optional)<input id="pn"></label>
+ <button class="btn" id="psave">Save entry</button></div>
+ <div class="card"><div class="noprint"><label>Month<input id="pmonth" type="month" value="${pm}"></label></div>
+ <div class="grid"><div class="tile"><small>Income</small><b class="ok">${N(inc)}</b></div><div class="tile"><small>Spending</small><b>${N(out)}</b></div></div></div>
+ ${Object.keys(cats).length?`<div class="card"><h2>Spending by category</h2>${Object.entries(cats).sort((a,b)=>b[1]-a[1]).map(([c,v])=>`<div class="row"><span>${esc(c)}</span><span>${N(v)}</span></div>`).join("")}</div>`:""}
+ <div class="card"><h2>Entries</h2>${es.length?es.map(e=>`<div class="row"><span>${e.date} · ${esc(e.category)} · ${esc(e.account)}${e.note?" · "+esc(e.note):""}</span><span><b class="${e.type=="income"?"ok":""}">${e.type=="income"?"+":"−"}${N(e.amount)}</b><br><button class="link noprint" data-pdel="${esc(e.id)}">Delete</button></span></div>`).join(""):`<p class="note">Nothing recorded for this month.</p>`}</div>`}
+function wdView(){
+ const es=wd.slice().sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:(b.ts||0)-(a.ts||0));
+ return `<div class="card noprint"><h2>Withdraw from business</h2>
+ <p class="note">Money you take out of the business into a personal account. It is recorded once here and is not a business expense.</p>
+ <label>Amount (₦)<input id="wa" type="number" inputmode="decimal" step="any"></label>
+ <label>Into personal account<input id="wac" list="al" autocomplete="off" value="Cash wallet"><datalist id="al">${accList().map(c=>`<option value="${esc(c)}">`).join("")}</datalist></label>
+ <label>Date<input id="wdd" type="date" value="${today()}"></label>
+ <label>Note (optional)<input id="wn"></label>
+ <button class="btn" id="wsave">Save withdrawal</button></div>
+ <div class="card"><h2>Withdrawals</h2>${es.length?es.map(e=>`<div class="row"><span>${e.date} · into ${esc(e.account)}${e.note?" · "+esc(e.note):""}</span><span><b>${N(e.amount)}</b><br><button class="link noprint" data-wdel="${esc(e.id)}">Delete</button></span></div>`).join(""):`<p class="note">No withdrawals yet.</p>`}</div>`}
+function cmp(label,c,p,fmt,good){
+ const d=c-p,cls=good===null||d==0?"":((d>0)==good?"ok":"warn"),ar=d>0?"▲":d<0?"▼":"•";
+ return `<div class="row"><span>${label}<br><span class="sm">last week ${fmt(p)}</span></span><b class="${cls}">${fmt(c)} ${ar}</b></div>`}
+function weekView(){
+ const e=wk,s=addDays(e,-6),pe=addDays(e,-7),ps=addDays(e,-13);
+ const b=biz(s,e),pb=biz(ps,pe),p=pst(s,e),pp=pst(ps,pe),w=wds(s,e),pw=wds(ps,pe);
+ const flow=b.recv-b.exp-w,pflow=pb.recv-pb.exp-pw,hp=b.withCost>0&&pb.withCost>0;
+ const warns=[];
+ if(b.n<7)warns.push(`Only ${b.n} of 7 days recorded for the business this week.`);
+ if(b.gaps)warns.push(`${b.gaps} day${b.gaps==1?"":"s"} with a stock gap. Investigate.`);
+ if(b.missing)warns.push(`${b.missing} day${b.missing==1?"":"s"} have no cost per kg, so profit is incomplete.`);
+ if(b.unpaid>0)warns.push(`${N(b.unpaid)} of this week's sales are not yet paid.`);
+ if(b.withCost&&b.profit>0&&w>b.profit)warns.push(`You withdrew ${N(w)}, more than the week's operating profit of ${N(b.profit)}.`);
+ if(pp.exp>0&&p.exp>pp.exp*1.2)warns.push(`Personal spending is up ${Math.round((p.exp/pp.exp-1)*100)}% on last week.`);
+ if(p.exp>p.inc+w&&p.exp>0)warns.push(`You spent ${N(p.exp)} personally but only ${N(p.inc+w)} came in this week.`);
+ return `<div class="seg noprint"><button data-wk="-7">‹ Previous</button><button data-wk="0" aria-pressed="false">Latest</button><button data-wk="7">Next ›</button><button id="print">Print / Save PDF</button></div>
+ <div class="card"><h2>Weekly review</h2><p class="note">Monday ${s} to Sunday ${e}</p>
+ ${warns.length?warns.map(x=>`<div class="row"><span class="warn">⚠ ${x}</span></div>`).join(""):`<div class="row"><span class="ok">Nothing flagged this week ✓</span></div>`}</div>
+ <div class="card"><h2>Business</h2>
+ ${cmp("Sales",b.sales,pb.sales,N,true)}${cmp("Quantity sold",b.kg,pb.kg,K,true)}${cmp("Operating expenses",b.exp,pb.exp,N,false)}
+ ${hp?cmp("Operating profit",b.profit,pb.profit,N,true):""}${cmp("Cash + bank received",b.recv,pb.recv,N,true)}
+ ${cmp("Withdrawn to personal",w,pw,N,null)}${cmp("Estimated cash flow",flow,pflow,N,true)}</div>
+ <div class="card"><h2>Personal</h2>${cmp("Income",p.inc,pp.inc,N,true)}${cmp("Spending",p.exp,pp.exp,N,false)}</div>
+ <div class="card"><h2>Position at end of week</h2>
+ <div class="row"><span>Customers owe you</span><b>${N(partyTotal(cust))}</b></div>
+ <div class="row"><span>You owe suppliers</span><b>${N(partyTotal(supp))}</b></div>
+ <div class="row"><span>Personal accounts total</span><b>${N(accounts().reduce((a,x)=>a+x[1],0))}</b></div>
+ <p class="note">Balances show today's figures, not a snapshot of that week.</p></div>`}
+
+/* ---------- actions ---------- */
+const newId=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+async function savePers(){
+ const amount=parseFloat($("pa").value),category=$("pc").value.trim(),account=$("pac").value.trim(),date=$("pd").value;
+ if(isNaN(amount)||amount<=0||!category||!account||!date){alert("Enter the amount, category, account and date.");return}
+ const id=newId();
+ try{await setDoc(doc(db,"hubPersonal",id),{id,date,type:$("pt").value,amount,category,account,note:$("pn").value.trim(),ts:Date.now()});pm=date.slice(0,7);msg="Saved";render(true)}
+ catch(e){alert("Could not save. Check your connection and try again.")}}
+async function saveWd(){
+ const amount=parseFloat($("wa").value),account=$("wac").value.trim(),date=$("wdd").value;
+ if(isNaN(amount)||amount<=0||!account||!date){alert("Enter the amount, account and date.");return}
+ const id=newId();
+ try{await setDoc(doc(db,"hubTransfers",id),{id,date,amount,account,note:$("wn").value.trim(),ts:Date.now()});msg="Saved";render(true)}
+ catch(e){alert("Could not save. Check your connection and try again.")}}
+async function del(c,id){if(!confirm("Delete this entry?"))return;try{await deleteDoc(doc(db,c,id))}catch(e){alert("Could not delete.")}}
+
+/* ---------- render ---------- */
+function render(force){
+ const a=document.activeElement;
+ if(!force&&$("view")&&a&&/INPUT|SELECT/.test(a.tagName)&&$("view").contains(a))return;
+ const v=$("app");
+ if(!$("view")){v.innerHTML=`<nav role="tablist"><button data-tab="dash">Dashboard</button><button data-tab="pers">Personal</button><button data-tab="wd">Withdrawals</button><button data-tab="week">Weekly review</button></nav><div id="view"></div>`;
+  v.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{tab=b.dataset.tab;render(true)})}
+ v.querySelectorAll("nav button").forEach(b=>b.setAttribute("aria-selected",b.dataset.tab==tab));
+ const w=$("view");
+ w.innerHTML=tab=="dash"?dash():tab=="pers"?persView():tab=="wd"?wdView():weekView();
+ w.querySelectorAll("[data-per]").forEach(b=>b.onclick=()=>{per=b.dataset.per;render(true)});
+ w.querySelectorAll("[data-wk]").forEach(b=>b.onclick=()=>{const n=+b.dataset.wk;if(n==0){const t=today(),d=new Date(t+"T00:00:00Z").getUTCDay();wk=d==0?t:addDays(t,-d)}else wk=addDays(wk,n);render(true)});
+ w.querySelectorAll("[data-pdel]").forEach(b=>b.onclick=()=>del("hubPersonal",b.dataset.pdel));
+ w.querySelectorAll("[data-wdel]").forEach(b=>b.onclick=()=>del("hubTransfers",b.dataset.wdel));
+ const pr=$("print");if(pr)pr.onclick=()=>window.print();
+ const ps=$("psave");if(ps)ps.onclick=savePers;
+ const ws=$("wsave");if(ws)ws.onclick=saveWd;
+ const mo=$("pmonth");if(mo)mo.onchange=()=>{if(mo.value){pm=mo.value;render(true)}};
+ if(msg){w.insertAdjacentHTML("beforeend",`<div class="toast" role="status">${msg}</div>`);msg="";setTimeout(()=>document.querySelector(".toast")?.remove(),2200)}}
+
+$("out").onclick=()=>signOut(auth);
+onAuthStateChanged(auth,async u=>{
+ unsubs.forEach(f=>f());unsubs=[];sales=[];costs={};cust=[];supp=[];pers=[];wd=[];me=u;
+ if(!u){loginView();return}
+ try{
+  const r=await getDoc(doc(db,"roles",u.uid));
+  $("out").hidden=false;
+  if(!r.exists()||r.data().role!="owner"){$("who").textContent=u.email;$("app").innerHTML=`<div class="card"><h2>Owner access only</h2><p class="note">This page is for the business owner.</p></div>`;return}
+  isOwner=true;$("who").textContent="Owner · "+u.email;
+  $("app").innerHTML="";render(true);
+  const sub=(c,fn)=>unsubs.push(onSnapshot(collection(db,c),s=>{fn(s.docs.map(d=>d.data()));render()},()=>{}));
+  sub("sales",a=>sales=a.sort((x,y)=>x.date<y.date?-1:1));
+  unsubs.push(onSnapshot(collection(db,"owner"),s=>{costs={};s.docs.forEach(d=>{const x=d.data();if(x.date)costs[x.date]=x.cost});render()},()=>{}));
+  sub("customerLedger",a=>cust=a);sub("supplierLedger",a=>supp=a);
+  sub("hubPersonal",a=>pers=a);sub("hubTransfers",a=>wd=a);
+ }catch(e){loginView("Could not connect. Check your internet and sign in again.")}
+});
+</script>
+</body>
+</html>
