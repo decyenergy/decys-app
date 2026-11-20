@@ -21,8 +21,8 @@ h1{font-size:22px;margin:4px 0 2px}
 .top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
 .sub{color:var(--mute);font-size:14px;margin:0 0 14px}
 .link{background:none;border:0;color:var(--flame);font:inherit;font-size:14px;cursor:pointer;padding:6px;text-decoration:none}
-nav{display:flex;gap:4px;background:var(--tile);padding:4px;border-radius:12px;margin-bottom:14px}
-nav button{flex:1;border:0;background:none;color:var(--mute);padding:10px 2px;border-radius:9px;font:inherit;font-weight:600;font-size:13px;cursor:pointer}
+nav{display:flex;gap:4px;background:var(--tile);padding:4px;border-radius:12px;margin-bottom:14px;overflow-x:auto}
+nav button{flex:1 0 auto;border:0;background:none;color:var(--mute);padding:10px 12px;border-radius:9px;font:inherit;font-weight:600;font-size:13px;cursor:pointer;white-space:nowrap}
 nav button[aria-selected="true"]{background:var(--card);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.15)}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -31,15 +31,19 @@ nav button[aria-selected="true"]{background:var(--card);color:var(--ink);box-sha
 .tile b{font-size:20px}
 .row{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid var(--line)}
 .row:last-child{border-bottom:0}.row>span:first-child{color:var(--mute)}
+.prow{cursor:pointer}.prow>span:first-child{color:var(--ink)}
 .ok{color:var(--good)}.warn{color:var(--bad)}
 h2{font-size:16px;margin:0 0 8px}
 label{display:block;font-size:13px;color:var(--mute);margin-bottom:10px}
 input,select{width:100%;margin-top:4px;padding:11px;border-radius:9px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:inherit}
 input:focus,select:focus,button:focus-visible{outline:2px solid var(--flame);outline-offset:1px}
 .btn{width:100%;padding:13px;border:0;border-radius:11px;background:var(--flame);color:#fff;font:inherit;font-weight:700;cursor:pointer}
+.btn.alt{background:var(--tile);color:var(--ink)}
 .seg{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;align-items:center}
 .seg button{border:1px solid var(--line);background:none;color:var(--mute);padding:8px 14px;border-radius:20px;font:inherit;cursor:pointer}
 .seg button[aria-pressed="true"]{background:var(--flame);border-color:var(--flame);color:#fff}
+.bar{height:10px;background:var(--tile);border-radius:6px;overflow:hidden;margin:6px 0}
+.bar i{display:block;height:100%;background:var(--good)}
 .note{font-size:13px;color:var(--mute)}
 .sm{font-size:12px;color:var(--mute)}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:14px}
@@ -73,9 +77,11 @@ const iso=d=>d.toISOString().slice(0,10);
 const today=()=>iso(new Date());
 const addDays=(s,n)=>{const d=new Date(s+"T00:00:00Z");d.setUTCDate(d.getUTCDate()+n);return iso(d)};
 const monday=s=>addDays(s,-((new Date(s+"T00:00:00Z").getUTCDay()+6)%7));
+const newId=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 const OPEN="Opening balance";
 let me=null,isOwner=false,tab="dash",per="week",pm=today().slice(0,7),msg="",unsubs=[];
-let sales=[],costs={},cust=[],supp=[],pers=[],wd=[];
+let sales=[],costs={},cust=[],supp=[],pers=[],wd=[],sav=[],debts=[],assets=[],nwh=[];
+let sv={mode:"list",goal:null},dbt={kind:"owe",party:null,mode:"list"};
 let wk=(()=>{const t=today(),d=new Date(t+"T00:00:00Z").getUTCDay();return d==0?t:addDays(t,-d)})();
 
 function loginView(err=""){
@@ -114,11 +120,45 @@ function accounts(){
  pers.forEach(e=>{m[e.account]=(m[e.account]||0)+(e.type=="income"?e.amount:-e.amount)});
  wd.forEach(e=>{m[e.account]=(m[e.account]||0)+e.amount});
  return Object.entries(m).sort((a,b)=>b[1]-a[1])}
+const accTotal=()=>accounts().reduce((a,x)=>a+x[1],0);
+
+/* savings */
+const goals=()=>sav.filter(e=>e.kind=="goal").sort((a,b)=>a.name.localeCompare(b.name));
+const goalSaved=id=>sav.filter(e=>e.kind=="c"&&e.goal==id).reduce((a,e)=>a+e.amount,0);
+const totalSaved=()=>goals().reduce((a,g)=>a+goalSaved(g.id),0);
+function monthlyRate(id){const f=addDays(today(),-90);return sav.filter(e=>e.kind=="c"&&e.goal==id&&e.date>=f).reduce((a,e)=>a+e.amount,0)/3}
+function monthlySpend(){const f=addDays(today(),-90);return pers.filter(e=>e.type=="expense"&&e.date>=f).reduce((a,e)=>a+e.amount,0)/3}
+function eta(g,saved){
+ if(saved>=g.target)return "Goal reached ✓";
+ const m=monthlyRate(g.id);if(m<=0)return "Add savings to see a completion estimate.";
+ const mo=Math.ceil((g.target-saved)/m),d=new Date();d.setUTCMonth(d.getUTCMonth()+mo);
+ return "At this pace: about "+iso(d).slice(0,7)+" ("+mo+" month"+(mo==1?"":"s")+")."}
+/* debts */
+const DL={owe:{title:"I owe",tot:"You owe",up:"I borrowed",down:"I repaid",ent:"Who do you owe?"},owed:{title:"Owed to me",tot:"Owed to you",up:"I lent",down:"They repaid",ent:"Who owes you?"}};
+function dparties(k){
+ const m={};
+ debts.filter(e=>e.kind==k).forEach(e=>{
+  const p=m[e.key]=m[e.key]||{key:e.key,name:e.party,bal:0,last:""};
+  p.bal+=e.dir=="up"?e.amount:-e.amount;
+  if(e.date>=p.last){p.last=e.date;p.name=e.party}});
+ return Object.values(m).sort((a,b)=>b.bal-a.bal)}
+const dtotal=k=>dparties(k).reduce((a,x)=>a+x.bal,0);
+/* assets */
+function items(kind){
+ const m={};
+ assets.filter(e=>e.kind==kind).forEach(e=>{
+  const p=m[e.key];
+  if(!p||e.date>p.date||(e.date==p.date&&(e.ts||0)>(p.ts||0)))m[e.key]=e});
+ return Object.values(m).sort((a,b)=>a.name.localeCompare(b.name))}
+const itotal=k=>items(k).reduce((a,x)=>a+x.value,0);
+function nwParts(){
+ const acc=accTotal(),as=itotal("asset"),ow=dtotal("owed"),li=itotal("liability"),io=dtotal("owe");
+ return {acc,as,ow,li,io,nw:acc+as+ow-li-io}}
 
 /* ---------- views ---------- */
 function segPer(){return `<div class="seg noprint">${[["week","This week"],["month","This month"],["last","Last month"],["all","All"]].map(([k,l])=>`<button data-per="${k}" aria-pressed="${per==k}">${l}</button>`).join("")}</div>`}
 function dash(){
- const [f,t]=range(per),b=biz(f,t),p=pst(f,t),w=wds(f,t),acc=accounts(),pt=acc.reduce((a,x)=>a+x[1],0);
+ const [f,t]=range(per),b=biz(f,t),p=pst(f,t),w=wds(f,t),acc=accounts(),pt=accTotal(),n=nwParts();
  const label={week:"This week",month:"This month",last:"Last month",all:"All time"}[per];
  return `${segPer()}
  <div class="card"><h2>Business · ${label}</h2><p class="note">${b.n} day${b.n==1?"":"s"} recorded</p>
@@ -137,7 +177,11 @@ function dash(){
  <div class="grid"><div class="tile"><small>Income</small><b class="ok">${N(p.inc)}</b></div>
  <div class="tile"><small>Spending</small><b>${N(p.exp)}</b></div></div>
  <p class="note">Withdrawals from the business are shown above and are not counted as income here.</p></div>
- <div class="card"><h2>Personal accounts</h2>${acc.length?acc.map(([n,v])=>`<div class="row"><span>${esc(n)}</span><b class="${v<0?"warn":""}">${N(v)}</b></div>`).join("")+`<div class="row"><span><b>Total</b></span><b>${N(pt)}</b></div>`:`<p class="note">No personal accounts yet. Add an "${OPEN}" income entry in the Personal tab for each account.</p>`}</div>`}
+ <div class="card"><h2>Personal accounts</h2>${acc.length?acc.map(([nm,v])=>`<div class="row"><span>${esc(nm)}</span><b class="${v<0?"warn":""}">${N(v)}</b></div>`).join("")+`<div class="row"><span><b>Total</b></span><b>${N(pt)}</b></div>`:`<p class="note">No personal accounts yet. Add an "${OPEN}" income entry in the Personal tab for each account.</p>`}</div>
+ <div class="card"><h2>Savings and net worth</h2>
+ <div class="row"><span>Saved toward goals</span><b>${N(totalSaved())}</b></div>
+ <div class="row"><span>Net worth</span><b class="${n.nw<0?"warn":""}">${N(n.nw)}</b></div></div>
+ <div class="card noprint"><h2>Backup</h2><p class="note">Saves all your Hub records to a file on this device. Keep a copy somewhere safe and do it every week.</p><button class="btn" id="bk">Download Hub backup</button></div>`}
 
 const CATS=["Food","Transport","Rent","Utilities","Family","Health","Education","Airtime & data","Clothing","Savings","Other","Salary","Gift","Rental income",OPEN];
 function accList(){return [...new Set(["Cash wallet",...pers.map(e=>e.account),...wd.map(e=>e.account)])]}
@@ -167,9 +211,101 @@ function wdView(){
  <label>Note (optional)<input id="wn"></label>
  <button class="btn" id="wsave">Save withdrawal</button></div>
  <div class="card"><h2>Withdrawals</h2>${es.length?es.map(e=>`<div class="row"><span>${e.date} · into ${esc(e.account)}${e.note?" · "+esc(e.note):""}</span><span><b>${N(e.amount)}</b><br><button class="link noprint" data-wdel="${esc(e.id)}">Delete</button></span></div>`).join(""):`<p class="note">No withdrawals yet.</p>`}</div>`}
+
+/* savings view */
+function goalForm(){
+ return `<div class="card"><h2>New savings goal</h2>
+ <label>Goal name<input id="gn" placeholder="e.g. Emergency fund, New car"></label>
+ <label>Target amount (₦)<input id="gt" type="number" inputmode="decimal" step="any"></label>
+ <label>Target date (optional)<input id="gd" type="date"></label>
+ <label>Is this your emergency fund?<select id="ge"><option value="no">No</option><option value="yes">Yes</option></select></label>
+ <button class="btn" id="gsave">Save goal</button>
+ <button class="link" id="gcancel" style="width:100%;margin-top:6px">Cancel</button></div>`}
+function contribForm(){
+ const gs=goals();
+ return `<div class="card"><h2>Add or take out savings</h2>
+ <label>Goal<select id="cgoal">${gs.map(g=>`<option value="${esc(g.id)}"${g.id==sv.goal?" selected":""}>${esc(g.name)}</option>`).join("")}</select></label>
+ <label>What happened<select id="cdir"><option value="1">Added to savings</option><option value="-1">Took money out</option></select></label>
+ <label>Amount (₦)<input id="ca" type="number" inputmode="decimal" step="any"></label>
+ <label>Date<input id="cdate" type="date" value="${today()}"></label>
+ <label>Note (optional)<input id="cn"></label>
+ <button class="btn" id="csave">Save</button>
+ <button class="link" id="ccancel" style="width:100%;margin-top:6px">Cancel</button></div>`}
+function savView(){
+ if(sv.mode=="goalform")return goalForm();
+ if(sv.mode=="add")return goals().length?contribForm():`<div class="card"><p class="note">Create a goal first.</p><button class="link" id="gnew">+ New goal</button></div>`;
+ const gs=goals(),g=sv.goal&&gs.find(x=>x.id==sv.goal);
+ if(g){
+  const saved=goalSaved(g.id),pct=g.target>0?Math.min(100,Math.round(saved/g.target*100)):0,es=sav.filter(e=>e.kind=="c"&&e.goal==g.id).sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:(b.ts||0)-(a.ts||0));
+  const sp=monthlySpend(),em=g.emergency&&sp>0?`<p class="note">Covers ${(saved/sp).toFixed(1)} month${(saved/sp).toFixed(1)=="1.0"?"":"s"} of your average spending.</p>`:"";
+  return `<button class="link" id="sback">‹ All goals</button>
+  <div class="card"><h2>${esc(g.name)}${g.emergency?" (emergency fund)":""}</h2>
+  <div class="grid"><div class="tile"><small>Saved</small><b>${N(saved)}</b></div><div class="tile"><small>Target</small><b>${N(g.target)}</b></div></div>
+  <div class="bar"><i style="width:${pct}%"></i></div><p class="note">${pct}% · ${N(Math.max(g.target-saved,0))} to go${g.deadline?" · target date "+g.deadline:""}</p>
+  <p class="note">${eta(g,saved)}</p>${em}</div>
+  <button class="btn" id="sadd" style="margin-bottom:14px">+ Add or take out savings</button>
+  <div class="card"><h2>History</h2>${es.length?es.map(e=>`<div class="row"><span>${e.date} · ${e.amount>=0?"Added":"Taken out"}${e.note?" · "+esc(e.note):""}</span><span><b class="${e.amount>=0?"ok":"warn"}">${e.amount>=0?"+":"−"}${N(Math.abs(e.amount))}</b><br><button class="link" data-sdel="${esc(e.id)}">Delete</button></span></div>`).join(""):`<p class="note">No savings recorded yet.</p>`}</div>
+  <div class="card"><button class="link warn" id="gdel">Delete this goal</button></div>`}
+ return `<div class="card"><div class="tile"><small>Total saved toward goals</small><b>${N(totalSaved())}</b></div>
+ <p class="note">Savings here are tracked amounts. They are already inside an account or asset, so net worth does not add them again.</p></div>
+ <button class="btn" id="sadd" style="margin-bottom:10px">+ Add or take out savings</button>
+ <button class="btn alt" id="gnew" style="margin-bottom:14px">+ New goal</button>
+ <div class="card"><h2>Goals</h2>${gs.length?gs.map(x=>{const s=goalSaved(x.id),p=x.target>0?Math.min(100,Math.round(s/x.target*100)):0;return `<div class="prow" data-g="${esc(x.id)}" style="padding:9px 0;border-bottom:1px solid var(--line)"><div class="row" style="border:0;padding:0"><span>${esc(x.name)}${x.emergency?" · emergency fund":""}</span><b>${N(s)} / ${N(x.target)}</b></div><div class="bar"><i style="width:${p}%"></i></div></div>`}).join(""):`<p class="note">No goals yet. Tap New goal to create one.</p>`}</div>`}
+
+/* debts view */
+function debtForm(){
+ const k=dbt.kind,L=DL[k],ps=dparties(k),cur=ps.find(p=>p.key==dbt.party);
+ return `<div class="card"><h2>New entry · ${L.title}</h2>
+ <label>${L.ent}<input id="dp" list="dpl" autocomplete="off" value="${cur?esc(cur.name):""}"><datalist id="dpl">${ps.map(p=>`<option value="${esc(p.name)}">`).join("")}</datalist></label>
+ <label>What happened<select id="dd"><option value="up">${L.up}</option><option value="down">${L.down}</option></select></label>
+ <label>Amount (₦)<input id="da" type="number" inputmode="decimal" step="any"></label>
+ <label>Date<input id="ddate" type="date" value="${today()}"></label>
+ <label>Note (optional)<input id="dn"></label>
+ <button class="btn" id="dsave">Save entry</button>
+ <button class="link" id="dcancel" style="width:100%;margin-top:6px">Cancel</button></div>`}
+function debtView(){
+ if(dbt.mode=="add")return debtForm();
+ const k=dbt.kind,L=DL[k],ps=dparties(k),p=ps.find(x=>x.key==dbt.party);
+ if(p){
+  const es=debts.filter(e=>e.kind==k&&e.key==p.key).sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:(b.ts||0)-(a.ts||0));
+  return `<button class="link" id="dback">‹ All</button>
+  <div class="card"><h2>${esc(p.name)}</h2><div class="tile"><small>${k=="owe"?"You owe":"Owes you"}</small><b class="${p.bal>0&&k=="owe"?"warn":""}">${N(p.bal)}</b></div></div>
+  <button class="btn" id="dadd" style="margin-bottom:14px">+ Add entry for ${esc(p.name)}</button>
+  <div class="card"><h2>History</h2>${es.map(e=>`<div class="row"><span>${e.date} · ${e.dir=="up"?L.up:L.down}${e.note?" · "+esc(e.note):""}</span><span><b>${e.dir=="up"?"+":"−"}${N(e.amount)}</b><br><button class="link" data-ddel="${esc(e.id)}">Delete</button></span></div>`).join("")}</div>`}
+ return `<div class="seg"><button data-dk="owe" aria-pressed="${k=="owe"}">I owe</button><button data-dk="owed" aria-pressed="${k=="owed"}">Owed to me</button></div>
+ <div class="card"><div class="tile"><small>${L.tot}</small><b class="${k=="owe"&&dtotal(k)>0?"warn":""}">${N(dtotal(k))}</b></div></div>
+ <button class="btn" id="dadd" style="margin-bottom:14px">+ New entry</button>
+ <div class="card"><h2>${L.title}</h2>${ps.length?ps.map(x=>`<div class="row prow" data-dp="${esc(x.key)}"><span>${esc(x.name)}</span><b>${N(x.bal)}</b></div>`).join(""):`<p class="note">Nothing recorded yet.</p>`}</div>`}
+
+/* net worth view */
+const NCATS=["Property","Vehicle","Equipment","Investment","Business","Savings account","Loan","Mortgage","Other"];
+function nwView(){
+ const n=nwParts(),a=items("asset"),l=items("liability"),h=nwh.slice().sort((x,y)=>x.month<y.month?-1:1);
+ const thisM=today().slice(0,7);
+ return `<div class="card"><h2>Net worth</h2><div class="tile"><small>Total</small><b class="${n.nw<0?"warn":""}">${N(n.nw)}</b></div>
+ <div class="row"><span>Personal accounts</span><span>${N(n.acc)}</span></div>
+ <div class="row"><span>Assets you listed</span><span>${N(n.as)}</span></div>
+ <div class="row"><span>Money owed to you</span><span>${N(n.ow)}</span></div>
+ <div class="row"><span>Liabilities you listed</span><span>−${N(n.li).replace("−","")}</span></div>
+ <div class="row"><span>Money you owe</span><span>−${N(n.io).replace("−","")}</span></div>
+ <button class="btn" id="nsnap" style="margin-top:10px">Save ${thisM} snapshot</button>
+ <p class="note">Run this at the end of each month to build your net worth history. Saving again in the same month replaces it.</p></div>
+ <div class="card noprint"><h2>Add or update an asset or liability</h2>
+ <p class="note">To update a value, enter the same name again with the new value. The latest date wins.</p>
+ <label>Type<select id="nk"><option value="asset">Asset (you own)</option><option value="liability">Liability (you owe)</option></select></label>
+ <label>Name<input id="nn" list="nl" autocomplete="off" placeholder="e.g. Toyota Camry, Land at Ikorodu"><datalist id="nl">${[...a,...l].map(x=>`<option value="${esc(x.name)}">`).join("")}</datalist></label>
+ <label>Category<input id="nc" list="ncl" autocomplete="off"><datalist id="ncl">${NCATS.map(c=>`<option value="${esc(c)}">`).join("")}</datalist></label>
+ <label>Current value (₦)<input id="nv" type="number" inputmode="decimal" step="any"></label>
+ <label>Value as at<input id="nd" type="date" value="${today()}"></label>
+ <button class="btn" id="nsave">Save</button></div>
+ <div class="card"><h2>Assets</h2>${a.length?a.map(x=>`<div class="row"><span>${esc(x.name)}<br><span class="sm">${esc(x.category||"")} · as at ${x.date}</span></span><span><b>${N(x.value)}</b><br><button class="link" data-nrem="${esc(x.key)}" data-nkind="asset">Remove</button></span></div>`).join(""):`<p class="note">No assets listed.</p>`}</div>
+ <div class="card"><h2>Liabilities</h2>${l.length?l.map(x=>`<div class="row"><span>${esc(x.name)}<br><span class="sm">${esc(x.category||"")} · as at ${x.date}</span></span><span><b>${N(x.value)}</b><br><button class="link" data-nrem="${esc(x.key)}" data-nkind="liability">Remove</button></span></div>`).join(""):`<p class="note">No liabilities listed.</p>`}</div>
+ <div class="card"><h2>Monthly net worth history</h2>${h.length?h.slice().reverse().map((x,i,arr)=>{const prev=arr[i+1],d=prev?x.nw-prev.nw:null;return `<div class="row"><span>${x.month}${d==null?"":`<br><span class="sm ${d>=0?"ok":"warn"}">${d>=0?"▲":"▼"} ${N(Math.abs(d))} vs ${prev.month}</span>`}</span><b>${N(x.nw)}</b></div>`}).join(""):`<p class="note">No snapshots yet.</p>`}</div>`}
+
 function cmp(label,c,p,fmt,good){
  const d=c-p,cls=good===null||d==0?"":((d>0)==good?"ok":"warn"),ar=d>0?"▲":d<0?"▼":"•";
  return `<div class="row"><span>${label}<br><span class="sm">last week ${fmt(p)}</span></span><b class="${cls}">${fmt(c)} ${ar}</b></div>`}
+function savedBetween(f,t){return sav.filter(e=>e.kind=="c"&&e.date>=f&&e.date<=t).reduce((a,e)=>a+e.amount,0)}
 function weekView(){
  const e=wk,s=addDays(e,-6),pe=addDays(e,-7),ps=addDays(e,-13);
  const b=biz(s,e),pb=biz(ps,pe),p=pst(s,e),pp=pst(ps,pe),w=wds(s,e),pw=wds(ps,pe);
@@ -189,52 +325,94 @@ function weekView(){
  ${cmp("Sales",b.sales,pb.sales,N,true)}${cmp("Quantity sold",b.kg,pb.kg,K,true)}${cmp("Operating expenses",b.exp,pb.exp,N,false)}
  ${hp?cmp("Operating profit",b.profit,pb.profit,N,true):""}${cmp("Cash + bank received",b.recv,pb.recv,N,true)}
  ${cmp("Withdrawn to personal",w,pw,N,null)}${cmp("Estimated cash flow",flow,pflow,N,true)}</div>
- <div class="card"><h2>Personal</h2>${cmp("Income",p.inc,pp.inc,N,true)}${cmp("Spending",p.exp,pp.exp,N,false)}</div>
- <div class="card"><h2>Position at end of week</h2>
+ <div class="card"><h2>Personal</h2>${cmp("Income",p.inc,pp.inc,N,true)}${cmp("Spending",p.exp,pp.exp,N,false)}${cmp("Saved toward goals",savedBetween(s,e),savedBetween(ps,pe),N,true)}</div>
+ <div class="card"><h2>Position today</h2>
  <div class="row"><span>Customers owe you</span><b>${N(partyTotal(cust))}</b></div>
  <div class="row"><span>You owe suppliers</span><b>${N(partyTotal(supp))}</b></div>
- <div class="row"><span>Personal accounts total</span><b>${N(accounts().reduce((a,x)=>a+x[1],0))}</b></div>
+ <div class="row"><span>Personal accounts total</span><b>${N(accTotal())}</b></div>
+ <div class="row"><span>Net worth</span><b>${N(nwParts().nw)}</b></div>
  <p class="note">Balances show today's figures, not a snapshot of that week.</p></div>`}
 
 /* ---------- actions ---------- */
-const newId=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+async function put(c,obj,m){try{await setDoc(doc(db,c,obj.id),obj);msg=m||"Saved";return true}catch(e){alert("Could not save. Check your connection and try again.");return false}}
+async function del(c,id){if(!confirm("Delete this entry?"))return;try{await deleteDoc(doc(db,c,id))}catch(e){alert("Could not delete.")}}
 async function savePers(){
  const amount=parseFloat($("pa").value),category=$("pc").value.trim(),account=$("pac").value.trim(),date=$("pd").value;
  if(isNaN(amount)||amount<=0||!category||!account||!date){alert("Enter the amount, category, account and date.");return}
- const id=newId();
- try{await setDoc(doc(db,"hubPersonal",id),{id,date,type:$("pt").value,amount,category,account,note:$("pn").value.trim(),ts:Date.now()});pm=date.slice(0,7);msg="Saved";render(true)}
- catch(e){alert("Could not save. Check your connection and try again.")}}
+ if(await put("hubPersonal",{id:newId(),date,type:$("pt").value,amount,category,account,note:$("pn").value.trim(),ts:Date.now()})){pm=date.slice(0,7);render(true)}}
 async function saveWd(){
  const amount=parseFloat($("wa").value),account=$("wac").value.trim(),date=$("wdd").value;
  if(isNaN(amount)||amount<=0||!account||!date){alert("Enter the amount, account and date.");return}
+ if(await put("hubTransfers",{id:newId(),date,amount,account,note:$("wn").value.trim(),ts:Date.now()}))render(true)}
+async function saveGoal(){
+ const name=$("gn").value.trim(),target=parseFloat($("gt").value);
+ if(!name||isNaN(target)||target<=0){alert("Enter the goal name and a target amount.");return}
  const id=newId();
- try{await setDoc(doc(db,"hubTransfers",id),{id,date,amount,account,note:$("wn").value.trim(),ts:Date.now()});msg="Saved";render(true)}
- catch(e){alert("Could not save. Check your connection and try again.")}}
-async function del(c,id){if(!confirm("Delete this entry?"))return;try{await deleteDoc(doc(db,c,id))}catch(e){alert("Could not delete.")}}
+ if(await put("hubSavings",{id,kind:"goal",name,target,deadline:$("gd").value||"",emergency:$("ge").value=="yes",date:today(),ts:Date.now()},"Goal saved")){sv.mode="list";sv.goal=id;render(true)}}
+async function saveContrib(){
+ const goal=$("cgoal").value,a=parseFloat($("ca").value),date=$("cdate").value,dir=parseFloat($("cdir").value);
+ if(!goal||isNaN(a)||a<=0||!date){alert("Enter the goal, amount and date.");return}
+ if(await put("hubSavings",{id:newId(),kind:"c",goal,amount:a*dir,date,note:$("cn").value.trim(),ts:Date.now()})){sv.mode="list";sv.goal=goal;render(true)}}
+async function delGoal(id){
+ if(!confirm("Delete this goal and all its savings entries?"))return;
+ try{for(const e of sav.filter(x=>x.id==id||(x.kind=="c"&&x.goal==id)))await deleteDoc(doc(db,"hubSavings",e.id));sv.goal=null;msg="Goal deleted";render(true)}
+ catch(e){alert("Could not delete.")}}
+async function saveDebt(){
+ const k=dbt.kind,party=$("dp").value.trim(),amount=parseFloat($("da").value),date=$("ddate").value;
+ if(!party||isNaN(amount)||amount<=0||!date){alert("Enter the name, a positive amount and the date.");return}
+ const key=party.toLowerCase();
+ if(await put("hubDebts",{id:newId(),kind:k,key,party,dir:$("dd").value,amount,date,note:$("dn").value.trim(),ts:Date.now()})){dbt.party=key;dbt.mode="list";render(true)}}
+async function saveAsset(){
+ const name=$("nn").value.trim(),value=parseFloat($("nv").value),date=$("nd").value;
+ if(!name||isNaN(value)||value<0||!date){alert("Enter the name, value and date.");return}
+ if(await put("hubAssets",{id:newId(),kind:$("nk").value,key:name.toLowerCase(),name,category:$("nc").value.trim(),value,date,ts:Date.now()}))render(true)}
+async function remAsset(key,kind){
+ if(!confirm("Remove this item and its value history?"))return;
+ try{for(const e of assets.filter(x=>x.key==key&&x.kind==kind))await deleteDoc(doc(db,"hubAssets",e.id));msg="Removed";render(true)}
+ catch(e){alert("Could not remove.")}}
+async function snapshot(){
+ const month=today().slice(0,7),n=nwParts();
+ if(await put("hubNetWorth",{id:"nw-"+month,month,nw:n.nw,accounts:n.acc,assets:n.as,owedToMe:n.ow,liabilities:n.li,iOwe:n.io,ts:Date.now()},"Snapshot saved"))render(true)}
+function dl(name,text,type){
+ const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;
+ document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1500)}
+function backup(){
+ dl("decys-hub-backup-"+today()+".json",JSON.stringify({exportedAt:new Date().toISOString(),app:"decys-hub",hubPersonal:pers,hubTransfers:wd,hubSavings:sav,hubDebts:debts,hubAssets:assets,hubNetWorth:nwh},null,1),"application/json");
+ msg="Backup downloaded";render(true)}
 
 /* ---------- render ---------- */
 function render(force){
  const a=document.activeElement;
  if(!force&&$("view")&&a&&/INPUT|SELECT/.test(a.tagName)&&$("view").contains(a))return;
  const v=$("app");
- if(!$("view")){v.innerHTML=`<nav role="tablist"><button data-tab="dash">Dashboard</button><button data-tab="pers">Personal</button><button data-tab="wd">Withdrawals</button><button data-tab="week">Weekly review</button></nav><div id="view"></div>`;
-  v.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{tab=b.dataset.tab;render(true)})}
+ if(!$("view")){v.innerHTML=`<nav role="tablist"><button data-tab="dash">Dashboard</button><button data-tab="pers">Personal</button><button data-tab="wd">Withdrawals</button><button data-tab="sav">Savings</button><button data-tab="debt">Debts</button><button data-tab="nw">Net worth</button><button data-tab="week">Weekly review</button></nav><div id="view"></div>`;
+  v.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{tab=b.dataset.tab;if(tab=="sav"){sv.mode="list";sv.goal=null}if(tab=="debt"){dbt.mode="list";dbt.party=null}render(true)})}
  v.querySelectorAll("nav button").forEach(b=>b.setAttribute("aria-selected",b.dataset.tab==tab));
  const w=$("view");
- w.innerHTML=tab=="dash"?dash():tab=="pers"?persView():tab=="wd"?wdView():weekView();
+ w.innerHTML=tab=="dash"?dash():tab=="pers"?persView():tab=="wd"?wdView():tab=="sav"?savView():tab=="debt"?debtView():tab=="nw"?nwView():weekView();
+ const on=(id,fn)=>{const el=$(id);if(el)el.onclick=fn};
  w.querySelectorAll("[data-per]").forEach(b=>b.onclick=()=>{per=b.dataset.per;render(true)});
  w.querySelectorAll("[data-wk]").forEach(b=>b.onclick=()=>{const n=+b.dataset.wk;if(n==0){const t=today(),d=new Date(t+"T00:00:00Z").getUTCDay();wk=d==0?t:addDays(t,-d)}else wk=addDays(wk,n);render(true)});
  w.querySelectorAll("[data-pdel]").forEach(b=>b.onclick=()=>del("hubPersonal",b.dataset.pdel));
  w.querySelectorAll("[data-wdel]").forEach(b=>b.onclick=()=>del("hubTransfers",b.dataset.wdel));
- const pr=$("print");if(pr)pr.onclick=()=>window.print();
- const ps=$("psave");if(ps)ps.onclick=savePers;
- const ws=$("wsave");if(ws)ws.onclick=saveWd;
+ w.querySelectorAll("[data-g]").forEach(b=>b.onclick=()=>{sv.goal=b.dataset.g;render(true)});
+ w.querySelectorAll("[data-sdel]").forEach(b=>b.onclick=()=>del("hubSavings",b.dataset.sdel));
+ w.querySelectorAll("[data-dk]").forEach(b=>b.onclick=()=>{dbt.kind=b.dataset.dk;dbt.party=null;dbt.mode="list";render(true)});
+ w.querySelectorAll("[data-dp]").forEach(b=>b.onclick=()=>{dbt.party=b.dataset.dp;render(true)});
+ w.querySelectorAll("[data-ddel]").forEach(b=>b.onclick=()=>del("hubDebts",b.dataset.ddel));
+ w.querySelectorAll("[data-nrem]").forEach(b=>b.onclick=()=>remAsset(b.dataset.nrem,b.dataset.nkind));
+ on("print",()=>window.print());on("bk",backup);
+ on("psave",savePers);on("wsave",saveWd);on("gsave",saveGoal);on("csave",saveContrib);on("dsave",saveDebt);on("nsave",saveAsset);on("nsnap",snapshot);
+ on("gnew",()=>{sv.mode="goalform";render(true)});on("sadd",()=>{sv.mode="add";render(true)});
+ on("gcancel",()=>{sv.mode="list";render(true)});on("ccancel",()=>{sv.mode="list";render(true)});
+ on("sback",()=>{sv.goal=null;render(true)});on("gdel",()=>delGoal(sv.goal));
+ on("dadd",()=>{dbt.mode="add";render(true)});on("dcancel",()=>{dbt.mode="list";render(true)});on("dback",()=>{dbt.party=null;render(true)});
  const mo=$("pmonth");if(mo)mo.onchange=()=>{if(mo.value){pm=mo.value;render(true)}};
  if(msg){w.insertAdjacentHTML("beforeend",`<div class="toast" role="status">${msg}</div>`);msg="";setTimeout(()=>document.querySelector(".toast")?.remove(),2200)}}
 
 $("out").onclick=()=>signOut(auth);
 onAuthStateChanged(auth,async u=>{
- unsubs.forEach(f=>f());unsubs=[];sales=[];costs={};cust=[];supp=[];pers=[];wd=[];me=u;
+ unsubs.forEach(f=>f());unsubs=[];sales=[];costs={};cust=[];supp=[];pers=[];wd=[];sav=[];debts=[];assets=[];nwh=[];me=u;
  if(!u){loginView();return}
  try{
   const r=await getDoc(doc(db,"roles",u.uid));
@@ -247,6 +425,7 @@ onAuthStateChanged(auth,async u=>{
   unsubs.push(onSnapshot(collection(db,"owner"),s=>{costs={};s.docs.forEach(d=>{const x=d.data();if(x.date)costs[x.date]=x.cost});render()},()=>{}));
   sub("customerLedger",a=>cust=a);sub("supplierLedger",a=>supp=a);
   sub("hubPersonal",a=>pers=a);sub("hubTransfers",a=>wd=a);
+  sub("hubSavings",a=>sav=a);sub("hubDebts",a=>debts=a);sub("hubAssets",a=>assets=a);sub("hubNetWorth",a=>nwh=a);
  }catch(e){loginView("Could not connect. Check your internet and sign in again.")}
 });
 </script>
