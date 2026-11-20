@@ -7,8 +7,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Decy’s Energy">
 <meta name="theme-color" content="#0f2233">
-  <link rel="apple-touch-icon" href="apple-touch-icon.png">
-
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <title>Decy’s Energy Solution</title>
 <style>
 :root{--bg:#f3f6f9;--card:#fff;--ink:#0f2233;--mute:#5d6f7e;--line:#dbe3ea;--flame:#1f6feb;--good:#13805a;--bad:#c23b3b;--tile:#eaf0f6;
@@ -103,12 +102,15 @@ function rows(){return sales.map(d=>{
 const who=r=>r.by||"Staff";
 function report(r){
  const dc=Math.abs(r.diff)<1?"ok":"warn";
- const money=isOwner?(r.gross==null?`<div class="card note">Add the cost per kg for ${r.date} (Add day tab) to see profit.</div>`:`<div class="profit"><span><b style="font-size:16px;color:var(--ink)">Operating profit</b><br><span class="note">Before finance costs, taxes and other unallocated expenses.</span></span><b>${N(r.op)}</b></div>`):"";
+ const profit=isOwner&&r.gross!=null?`<div class="profit"><span><b style="font-size:16px;color:var(--ink)">Operating profit</b><br><span class="note">Before finance costs, taxes and other unallocated expenses.</span></span><b>${N(r.op)}</b></div>`:"";
+ const costCard=isOwner?`<div class="card noprint"><h2>Cost per kg (owner only)</h2>${r.cost==null?`<p class="note warn">No cost saved for this day, so profit is not shown.</p>`:""}<label>Cost for ${r.date} (₦)<input id="cq" type="number" inputmode="decimal" step="any" value="${r.cost??""}"></label><button class="btn" id="cs">Save cost</button></div>`:"";
+ const delCard=isOwner?`<div class="card noprint"><button class="link warn" id="dday">Delete this day</button><p class="note">Removes this day and its saved cost. Later days keep their own opening stock.</p></div>`:"";
  return `<div class="card"><h2>${r.date} · Daily report</h2><div class="grid">
  <div class="tile"><small>Total sales</small><b>${N(r.total)}</b></div>
  <div class="tile"><small>Quantity sold</small><b>${K(r.sold)}</b></div>
  <div class="tile"><small>${isOwner?"Gross contribution":"Selling price / kg"}</small><b>${isOwner?(r.gross==null?"–":N(r.gross)):N(r.price)}</b></div>
- <div class="tile"><small>Operating expenses</small><b>${N(r.exp)}</b></div></div>${money}</div>
+ <div class="tile"><small>Operating expenses</small><b>${N(r.exp)}</b></div></div>${profit}</div>
+ ${costCard}
  <div class="card"><h2>Stock reconciliation</h2>
  <div class="row"><span>Opening stock</span><span>${K(r.open)}</span></div>
  <div class="row"><span>Stock received</span><span>${K(r.recv)}</span></div>
@@ -120,9 +122,25 @@ function report(r){
  <div class="row"><span>Cash received</span><span>${N(r.cash)}</span></div>
  <div class="row"><span>Bank received</span><span>${N(r.bank)}</span></div>
  <div class="row"><span>Sales not yet paid</span><b class="${r.credit>0?"warn":"ok"}">${N(Math.max(r.credit,0))}</b></div>
- <div class="row"><span>Entered by</span><span>${who(r)}</span></div></div>`}
+ <div class="row"><span>Entered by</span><span>${who(r)}</span></div></div>
+ ${delCard}`}
+function wireDay(date){
+ const cs=$("cs");if(cs)cs.onclick=()=>saveCost(date);
+ const dd=$("dday");if(dd)dd.onclick=()=>deleteDay(date)}
+async function saveCost(date){
+ const c=parseFloat($("cq").value);
+ if(isNaN(c)||c<0){alert("Enter the cost per kg.");return}
+ try{await setDoc(doc(db,"owner","cost-"+date),{date,cost:c});costs[date]=c;msg="Cost saved";if(document.activeElement)document.activeElement.blur();$("view").innerHTML="";render()}
+ catch(e){alert("Could not save the cost.")}}
+async function deleteDay(date){
+ if(!confirm("Delete "+date+"? This removes the day's record and its saved cost. This cannot be undone."))return;
+ try{
+  await deleteDoc(doc(db,"sales",date));
+  await deleteDoc(doc(db,"owner","cost-"+date));
+  sales=sales.filter(s=>s.date!=date);delete costs[date];hist.day=null;msg="Day deleted";$("view").innerHTML="";render()
+ }catch(e){alert("Could not delete the day.")}}
 
-/* ---------- History and statements ---------- */
+/* ---------- History, statements and backup ---------- */
 function historyView(rs){
  if(hist.day){
   const r=rs.find(x=>x.date==hist.day);
@@ -153,20 +171,36 @@ function historyView(rs){
  <div class="row"><span>Net stock difference</span><b class="${Math.abs(netGap)<1?"ok":"warn"}">${netGap>0?"+":""}${K(netGap)}</b></div></div>
  <div class="card"><h2>Days</h2><p class="note noprint">Tap a day to open its full statement.</p><div class="scroll"><table><tr><th>Date</th><th>Sales</th><th>Kg</th>${isOwner?"<th>Profit</th>":""}<th>Stock diff</th><th>Credit</th></tr>
  ${sel.slice().reverse().map(r=>`<tr data-day="${r.date}"><td>${r.date.slice(5)}</td><td>${N(r.total)}</td><td>${r.sold}</td>${isOwner?`<td>${r.op==null?"–":N(r.op)}</td>`:""}<td class="${Math.abs(r.diff)<1?"ok":"warn"}">${r.diff>0?"+":""}${Math.round(r.diff*10)/10}</td><td>${N(Math.max(r.credit,0))}</td></tr>`).join("")||`<tr><td colspan="6" class="note">No days in this period.</td></tr>`}</table></div></div>
- ${isOwner&&sel.length?`<div class="card"><h2>Employee performance</h2>${Object.entries(per).map(([n,p])=>`<div class="row"><span>${esc(n)} · ${p.n} day${p.n>1?"s":""}</span><span>${N(p.s)} · ${p.k}kg · <span class="${p.d<1?"ok":"warn"}">${Math.round(p.d*10)/10}kg stock gap</span></span></div>`).join("")}</div>`:""}`}
+ ${isOwner&&sel.length?`<div class="card"><h2>Employee performance</h2>${Object.entries(per).map(([n,p])=>`<div class="row"><span>${esc(n)} · ${p.n} day${p.n>1?"s":""}</span><span>${N(p.s)} · ${p.k}kg · <span class="${p.d<1?"ok":"warn"}">${Math.round(p.d*10)/10}kg stock gap</span></span></div>`).join("")}</div>`:""}
+ ${isOwner?`<div class="card noprint"><h2>Backup (owner only)</h2><p class="note">Saves all your records to a file on this device. Keep a copy somewhere safe, such as Files or Google Drive, and do it every week.</p><button class="btn" id="bk">Download backup</button><button class="link" id="bkcsv" style="width:100%;margin-top:6px">Download daily records (spreadsheet)</button></div>`:""}`}
+function dl(name,text,type){
+ const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;
+ document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1500)}
+function backup(){
+ dl("decys-backup-"+today()+".json",JSON.stringify({exportedAt:new Date().toISOString(),app:"decys-energy",sales,costs,customerLedger:ledgers.customer,supplierLedger:ledgers.supplier,inventoryLog:invLog},null,1),"application/json");
+ msg="Backup downloaded";render()}
+function backupCsv(){
+ const q=v=>'"'+String(v??"").replace(/"/g,'""')+'"';
+ const head=["Date","Opening stock kg","Received kg","Sold kg","Price per kg","Sales","Expenses","Cash","Bank","Physical count kg","Stock difference kg","Cost per kg","Operating profit","Entered by"];
+ const lines=rows().map(r=>[r.date,r.open,r.recv,r.sold,r.price,r.total,r.exp,r.cash,r.bank,r.count,r.diff,r.cost??"",r.op??"",who(r)].map(q).join(","));
+ dl("decys-daily-records-"+today()+".csv",[head.map(q).join(","),...lines].join("\n"),"text/csv");
+ msg="Records downloaded";render()}
 function wireHist(){
  const w=$("view"),go=()=>{$("view").innerHTML="";render()};
  const bk=$("hback");if(bk)bk.onclick=()=>{hist.day=null;go()};
  const pr=$("hprint");if(pr)pr.onclick=()=>window.print();
  const fr=$("hfrom");if(fr)fr.onchange=()=>{hist.from=fr.value;go()};
  const to=$("hto");if(to)to.onchange=()=>{hist.to=to.value;go()};
+ const b1=$("bk");if(b1)b1.onclick=backup;
+ const b2=$("bkcsv");if(b2)b2.onclick=backupCsv;
  w.querySelectorAll("[data-pre]").forEach(b=>b.onclick=()=>{
   const p=b.dataset.pre,n=new Date(),y=n.getUTCFullYear(),m=n.getUTCMonth(),iso=d=>d.toISOString().slice(0,10);
   if(p=="month"){hist.from=iso(new Date(Date.UTC(y,m,1)));hist.to=today()}
   else if(p=="last"){hist.from=iso(new Date(Date.UTC(y,m-1,1)));hist.to=iso(new Date(Date.UTC(y,m,0)))}
   else{hist.from="";hist.to=""}
   go()});
- w.querySelectorAll("tr[data-day]").forEach(tr=>tr.onclick=()=>{hist.day=tr.dataset.day;go()})}
+ w.querySelectorAll("tr[data-day]").forEach(tr=>tr.onclick=()=>{hist.day=tr.dataset.day;go()});
+ if(hist.day)wireDay(hist.day)}
 
 const nextDate=s=>{const d=new Date(s+"T00:00:00Z");d.setUTCDate(d.getUTCDate()+1);return d.toISOString().slice(0,10)};
 function entry(rs){
@@ -332,12 +366,14 @@ function render(){
  else if(tab=="inventory"){w.innerHTML=invView();wireInv()}
  else if(!rs.length)w.innerHTML=`<div class="card"><h2>No days recorded yet</h2><p class="note">Open Add day and enter the first day’s figures.</p></div>`;
  else if(tab=="history"){w.innerHTML=historyView(rs);wireHist()}
- else w.innerHTML=report(rs[rs.length-1]);
+ else{const r=rs[rs.length-1];w.innerHTML=report(r);wireDay(r.date)}
  if(msg){w.insertAdjacentHTML("beforeend",`<div class="toast" role="status">${msg}</div>`);msg="";setTimeout(()=>document.querySelector(".toast")?.remove(),2200)}}
 function redraw(){
  if(tab=="entry"&&$("save"))return;
  if(tab=="balances"&&bal.mode=="add"&&$("lsave"))return;
  if(tab=="inventory"&&inv.mode=="add"&&$("isave"))return;
+ const a=document.activeElement;
+ if(a&&/INPUT|SELECT/.test(a.tagName)&&$("view")&&$("view").contains(a))return;
  $("view").innerHTML="";render()}
 async function save(){
  const g=i=>$(i)?.value,n=i=>parseFloat(g(i));
@@ -368,7 +404,7 @@ onAuthStateChanged(auth,async u=>{
   unsubs.push(onSnapshot(collection(db,"customerLedger"),s=>{ledgers.customer=s.docs.map(d=>d.data());redraw()},()=>{}));
   unsubs.push(onSnapshot(collection(db,"inventoryLog"),s=>{invLog=s.docs.map(d=>d.data());redraw()},()=>{}));
   if(isOwner){
-   unsubs.push(onSnapshot(collection(db,"owner"),s=>{costs={};s.docs.forEach(d=>{const x=d.data();costs[x.date]=x.cost});redraw()},()=>{}));
+   unsubs.push(onSnapshot(collection(db,"owner"),s=>{costs={};s.docs.forEach(d=>{const x=d.data();if(x.date)costs[x.date]=x.cost});redraw()},()=>{}));
    unsubs.push(onSnapshot(collection(db,"supplierLedger"),s=>{ledgers.supplier=s.docs.map(d=>d.data());redraw()},()=>{}));
   }
  }catch(e){loginView("Could not connect. Check your internet and sign in again.")}
