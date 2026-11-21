@@ -77,7 +77,8 @@ const app=initializeApp({
   appId:"1:150470704958:web:c1c1b0fc711e8cec80f66f"
 });
 const auth=getAuth(app),db=getFirestore(app);
-const N=n=>"₦"+Math.round(n).toLocaleString("en-NG"),K=n=>(Math.round(n*10)/10).toLocaleString("en-NG")+"kg";
+const N=n=>(n<0?"−":"")+"₦"+Math.abs(Math.round(n)).toLocaleString("en-NG"),K=n=>(Math.round(n*10)/10).toLocaleString("en-NG")+"kg";
+
 const $=id=>document.getElementById(id);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const today=()=>new Date().toISOString().slice(0,10);
@@ -367,7 +368,9 @@ function render(){
  else if(!rs.length)w.innerHTML=`<div class="card"><h2>No days recorded yet</h2><p class="note">Open Add day and enter the first day’s figures.</p></div>`;
  else if(tab=="history"){w.innerHTML=historyView(rs);wireHist()}
  else{const r=rs[rs.length-1];w.innerHTML=report(r);wireDay(r.date)}
- if(msg){w.insertAdjacentHTML("beforeend",`<div class="toast" role="status">${msg}</div>`);msg="";setTimeout(()=>document.querySelector(".toast")?.remove(),2200)}}
+  document.querySelectorAll(".profit b").forEach(b=>{if(b.textContent.indexOf("−")>-1)b.style.color="var(--bad)"});
+
+  if(msg){w.insertAdjacentHTML("beforeend",`<div class="toast" role="status">${msg}</div>`);msg="";setTimeout(()=>document.querySelector(".toast")?.remove(),2200)}}
 function redraw(){
  if(tab=="entry"&&$("save"))return;
  if(tab=="balances"&&bal.mode=="add"&&$("lsave"))return;
